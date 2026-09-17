@@ -1,0 +1,234 @@
+/**
+ * IPC 通道注册（全部 invoke handler 集中于此，与 shared/ipc.ts 一一对应）
+ */
+import { app, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import path from 'node:path'
+import { IPC } from '@shared/ipc'
+import type { CropRect, FillMode, ImageItem } from '@shared/types'
+import {
+  addCategory,
+  cropToNewImage,
+  deleteCategory,
+  deleteImage,
+  getLibrary,
+  importPaths,
+  renameCategory,
+  renameImage,
+  updateImage
+} from './services/library'
+import { applyWallpaper, listMonitors } from './services/wallpaper'
+import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './services/slideshow'
+import { clearHistory, listHistory, recordApply } from './services/history'
+import { flushSettings, getSettings, updateSettings } from './services/settings'
+import { customStorageDirMissing, dirSize, hasCustomStorageDir, storageRoot } from './services/paths'
+import { flushLibrary } from './services/library'
+import { flushHistory } from './services/history'
+import { flushSlideshow } from './services/slideshow'
+
+/** 统一的错误包装：渲染层拿到 { ok, data } 而非异常堆栈 */
+function wrap<A extends unknown[], R>(
+  handler: (...args: A) => Promise<R> | R
+): (event: Electron.IpcMainInvokeEvent, ...args: A) => Promise<{ ok: true; data: R } | { ok: false; error: string }> {
+  return async (_event, ...args) => {
+    try {
+      return { ok: true, data: await handler(...args) }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[ipc] 处理失败:`, message)
+      return { ok: false, error: message }
+    }
+  }
+}
+
+export function registerIpcHandlers(): void {
+  // ---------- 应用 ----------
+  ipcMain.handle(IPC.APP_GET_STATE, () => ({
+    settings: getSettings(),
+    platform: process.platform,
+    version: app.getVersion()
+  }))
+
+  ipcMain.handle(
+    IPC.APP_SET_THEME,
+    wrap((theme: 'system' | 'light' | 'dark') => {
+      nativeTheme.themeSource = theme
+      return updateSettings({ theme })
+    })
+  )
+
+  ipcMain.handle(
+    IPC.APP_SET_IMPORT_MODE,
+    wrap((mode: 'copy' | 'reference') => updateSettings({ importMode: mode }))
+  )
+
+  ipcMain.handle(
+    IPC.APP_SET_DEFAULT_FILL,
+    wrap((mode: FillMode) => updateSettings({ defaultFillMode: mode }))
+  )
+
+  // 存储位置信息（当前根目录 / 是否自定义 / 占用大小）
+  ipcMain.handle(
+    IPC.APP_GET_STORAGE,
+    wrap(async () => ({
+      root: storageRoot(),
+      custom: hasCustomStorageDir(),
+      missing: customStorageDirMissing(),
+      sizeBytes: await dirSize(storageRoot())
+    }))
+  )
+
+  /**
+   * 更换存储目录：弹目录选择框 → 整体复制全部数据到新位置 →
+   * 在新位置写入 storageDir 标记 → 通知渲染层 → 延迟自动重启生效。
+   * （复制而非移动：迁移中断不会丢数据；重启成功后可手动删除旧目录）
+   */
+  ipcMain.handle(
+    IPC.APP_CHANGE_STORAGE,
+    wrap(async () => {
+      const res = await dialog.showOpenDialog({
+        title: '选择新的存储位置',
+        message: '将把全部素材与数据迁移到该位置（外置磁盘请先挂载）',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (res.canceled || !res.filePaths[0]) return { canceled: true }
+
+      let target = res.filePaths[0]
+      // 选中的目录非空时，自动使用其下的 vividDeck 子目录，避免混入其他文件
+      if (fs.readdirSync(target).length > 0) {
+        target = path.join(target, 'vividDeck')
+        if (fs.existsSync(target)) {
+          throw new Error('所选位置已存在 vividDeck 目录，请换一个位置')
+        }
+      }
+
+      const source = storageRoot()
+      if (path.resolve(source) === path.resolve(target)) {
+        throw new Error('新位置与当前存储位置相同')
+      }
+
+      // 1) 全部落盘，保证复制到新位置的是最新数据
+      flushLibrary()
+      flushHistory()
+      flushSlideshow()
+      flushSettings()
+
+      // 2) 整体复制（跨卷亦可；大素材库耗时较长，由渲染层展示迁移中状态）
+      await fsp.cp(source, target, { recursive: true, force: true })
+
+      // 3) 在新位置的 settings.json 写入 storageDir 标记
+      const settingsFile = path.join(target, 'data', 'settings.json')
+      const data = JSON.parse(await fsp.readFile(settingsFile, 'utf-8')) as Record<string, unknown>
+      data.storageDir = target
+      await fsp.writeFile(settingsFile, JSON.stringify(data, null, 2), 'utf-8')
+
+      // 4) 给渲染层 1.5s 展示"迁移完成"，随后自动重启生效
+      setTimeout(() => {
+        app.relaunch()
+        app.exit(0)
+      }, 1500)
+
+      return { canceled: false, root: target }
+    })
+  )
+
+  ipcMain.handle(IPC.APP_OPEN_USER_DATA, () => {
+    void shell.openPath(app.getPath('userData'))
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.APP_QUIT, () => {
+    ;(app as unknown as { __isQuitting?: boolean }).__isQuitting = true
+    app.quit()
+    return { ok: true }
+  })
+
+  // ---------- 素材库 ----------
+  ipcMain.handle(
+    IPC.DIALOG_PICK_IMPORT,
+    wrap(async (mode: 'files' | 'folder') => {
+      if (mode === 'folder') {
+        const res = await dialog.showOpenDialog({
+          title: '选择要导入的文件夹',
+          properties: ['openDirectory']
+        })
+        return res.canceled ? [] : res.filePaths
+      }
+      const res = await dialog.showOpenDialog({
+        title: '选择要导入的图片',
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }
+        ]
+      })
+      return res.canceled ? [] : res.filePaths
+    })
+  )
+
+  ipcMain.handle(IPC.LIBRARY_IMPORT, wrap((payload: { paths: string[] }) => importPaths(payload.paths)))
+  ipcMain.handle(IPC.LIBRARY_GET_ALL, () => getLibrary())
+  ipcMain.handle(
+    IPC.LIBRARY_RENAME_IMAGE,
+    wrap((payload: { id: string; fileName: string }) => renameImage(payload.id, payload.fileName))
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_DELETE_IMAGE,
+    wrap((payload: { id: string }) => deleteImage(payload.id))
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_UPDATE_IMAGE,
+    wrap((payload: { id: string; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }) =>
+      updateImage(payload.id, payload.patch)
+    )
+  )
+  ipcMain.handle(IPC.LIBRARY_ADD_CATEGORY, wrap((payload: { name: string }) => addCategory(payload.name)))
+  ipcMain.handle(IPC.LIBRARY_RENAME_CATEGORY, wrap((payload: { id: string; name: string }) => renameCategory(payload.id, payload.name)))
+  ipcMain.handle(IPC.LIBRARY_DELETE_CATEGORY, wrap((payload: { id: string }) => deleteCategory(payload.id)))
+
+  // ---------- 壁纸 ----------
+  ipcMain.handle(IPC.WALLPAPER_LIST_MONITORS, wrap(() => listMonitors()))
+
+  ipcMain.handle(
+    IPC.WALLPAPER_APPLY,
+    wrap(async (payload: { imageId: string; monitorIds: string[]; fillMode: FillMode }) => {
+      const image = getLibrary().images.find((img) => img.id === payload.imageId)
+      if (!image) throw new Error('图片不存在（可能已被删除）')
+      const result = await applyWallpaper(image.path, payload.monitorIds, payload.fillMode)
+      // 设置成功 → 写入历史
+      recordApply(image.id, result.applied, payload.fillMode)
+      return result
+    })
+  )
+
+  // ---------- 轮播 ----------
+  ipcMain.handle(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
+  ipcMain.handle(IPC.SLIDESHOW_SET, wrap((patch: Parameters<typeof setSlideshowConfig>[0]) => setSlideshowConfig(patch)))
+  ipcMain.handle(IPC.SLIDESHOW_NEXT, wrap(() => nextSlideshowNow()))
+
+  // ---------- 历史 ----------
+  ipcMain.handle(IPC.HISTORY_LIST, () => listHistory())
+
+  ipcMain.handle(
+    IPC.HISTORY_APPLY,
+    wrap(async (payload: { historyId: string }) => {
+      const entry = listHistory().find((h) => h.id === payload.historyId)
+      if (!entry) throw new Error('历史记录不存在')
+      const image = getLibrary().images.find((img) => img.id === entry.imageId)
+      if (!image) throw new Error('该壁纸的图片文件已不在素材库中')
+      const result = await applyWallpaper(image.path, entry.monitorIds, entry.fillMode)
+      recordApply(image.id, result.applied, entry.fillMode)
+      return result
+    })
+  )
+
+  ipcMain.handle(IPC.HISTORY_CLEAR, () => clearHistory())
+
+  // ---------- 裁剪 ----------
+  ipcMain.handle(
+    IPC.CROP_APPLY,
+    wrap((payload: { imageId: string; rect: CropRect; label?: string }) =>
+      cropToNewImage(payload.imageId, payload.rect, payload.label ?? '')
+    )
+  )
+}

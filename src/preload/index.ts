@@ -1,0 +1,97 @@
+/**
+ * preload 桥：以 contextBridge 暴露类型安全的 window.api
+ * - 全部走 ipcRenderer.invoke（请求-响应），无任意 channel 透传
+ * - 订阅类事件（轮播推送）单独暴露 on/off 方法
+ */
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { IPC, IPC_EVENTS } from '@shared/ipc'
+import type {
+  AppSettings,
+  CropRect,
+  FillMode,
+  HistoryItem,
+  ImageItem,
+  ImportResult,
+  LibraryData,
+  MonitorInfo,
+  SlideshowConfig
+} from '@shared/types'
+
+/** 统一响应结构 */
+type Res<T> = { ok: true; data: T } | { ok: false; error: string }
+
+async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
+  const res = (await ipcRenderer.invoke(channel, ...args)) as Res<T>
+  if (!res.ok) throw new Error(res.error)
+  return res.data
+}
+
+const api = {
+  // ---------- 应用 ----------
+  getState: async (): Promise<{ settings: AppSettings; platform: string; version: string }> =>
+    ipcRenderer.invoke(IPC.APP_GET_STATE),
+  setTheme: (theme: AppSettings['theme']) => call<AppSettings>(IPC.APP_SET_THEME, theme),
+  setImportMode: (mode: AppSettings['importMode']) => call<AppSettings>(IPC.APP_SET_IMPORT_MODE, mode),
+  setDefaultFillMode: (mode: AppSettings['defaultFillMode']) =>
+    call<AppSettings>(IPC.APP_SET_DEFAULT_FILL, mode),
+  getStorageInfo: () =>
+    call<{ root: string; custom: boolean; missing: boolean; sizeBytes: number }>(IPC.APP_GET_STORAGE),
+  changeStorageDir: () => call<{ canceled: boolean; root?: string }>(IPC.APP_CHANGE_STORAGE),
+  openUserData: () => ipcRenderer.invoke(IPC.APP_OPEN_USER_DATA),
+  quit: () => ipcRenderer.invoke(IPC.APP_QUIT),
+
+  // ---------- 素材库 ----------
+  pickImport: (mode: 'files' | 'folder') => call<string[]>(IPC.DIALOG_PICK_IMPORT, mode),
+  importPaths: (paths: string[]) => call<ImportResult>(IPC.LIBRARY_IMPORT, { paths }),
+  getLibrary: () => ipcRenderer.invoke(IPC.LIBRARY_GET_ALL) as Promise<LibraryData>,
+  renameImage: (id: string, fileName: string) => call<LibraryData>(IPC.LIBRARY_RENAME_IMAGE, { id, fileName }),
+  deleteImage: (id: string) => call<LibraryData>(IPC.LIBRARY_DELETE_IMAGE, { id }),
+  updateImage: (id: string, patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>) =>
+    call<LibraryData>(IPC.LIBRARY_UPDATE_IMAGE, { id, patch }),
+  addCategory: (name: string) => call<LibraryData>(IPC.LIBRARY_ADD_CATEGORY, { name }),
+  renameCategory: (id: string, name: string) => call<LibraryData>(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
+  deleteCategory: (id: string) => call<LibraryData>(IPC.LIBRARY_DELETE_CATEGORY, { id }),
+
+  // ---------- 壁纸 ----------
+  listMonitors: () => call<MonitorInfo[]>(IPC.WALLPAPER_LIST_MONITORS),
+  applyWallpaper: (imageId: string, monitorIds: string[], fillMode: FillMode) =>
+    call<{ applied: string[] }>(IPC.WALLPAPER_APPLY, { imageId, monitorIds, fillMode }),
+
+  // ---------- 轮播 ----------
+  getSlideshow: () => ipcRenderer.invoke(IPC.SLIDESHOW_GET) as Promise<SlideshowConfig>,
+  setSlideshow: (patch: Partial<SlideshowConfig>) => call<SlideshowConfig>(IPC.SLIDESHOW_SET, patch),
+  slideshowNext: () => call<void>(IPC.SLIDESHOW_NEXT),
+
+  // ---------- 历史 ----------
+  listHistory: () => ipcRenderer.invoke(IPC.HISTORY_LIST) as Promise<HistoryItem[]>,
+  applyHistory: (historyId: string) => call<{ applied: string[] }>(IPC.HISTORY_APPLY, { historyId }),
+  clearHistory: () => ipcRenderer.invoke(IPC.HISTORY_CLEAR) as Promise<HistoryItem[]>,
+
+  // ---------- 裁剪 ----------
+  cropApply: (imageId: string, rect: CropRect, label?: string) =>
+    call<ImageItem>(IPC.CROP_APPLY, { imageId, rect, label }),
+
+  // ---------- 拖拽导入辅助 ----------
+  /** HTML File 对象 → 本地绝对路径（Electron 32+ File.path 已移除，须用 webUtils） */
+  filePathOf: (file: File) => webUtils.getPathForFile(file),
+
+  // ---------- 事件订阅（轮播推送） ----------
+  onSlideshowTick: (cb: (payload: { entry: HistoryItem; manual: boolean }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: { entry: HistoryItem; manual: boolean }): void => cb(payload)
+    ipcRenderer.on(IPC_EVENTS.SLIDESHOW_TICK, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.SLIDESHOW_TICK, listener)
+    }
+  },
+  onSlideshowChanged: (cb: (config: SlideshowConfig) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, config: SlideshowConfig): void => cb(config)
+    ipcRenderer.on(IPC_EVENTS.SLIDESHOW_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.SLIDESHOW_CHANGED, listener)
+    }
+  }
+}
+
+contextBridge.exposeInMainWorld('api', api)
+
+export type VividDeckApi = typeof api

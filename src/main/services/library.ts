@@ -1,0 +1,269 @@
+/**
+ * 素材库服务：导入、元信息、分类、标签、收藏、重命名、删除
+ * 所有文件操作收敛在本模块（UI 不直接碰文件），为二期 MinIO 同步预留边界。
+ */
+import { app, shell } from 'electron'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import path from 'node:path'
+import sharp from 'sharp'
+import {
+  DEFAULT_CATEGORY_NAMES,
+  SUPPORTED_EXTENSIONS,
+  type Category,
+  type CropRect,
+  type ImageFormat,
+  type ImageItem,
+  type ImportResult,
+  type LibraryData
+} from '@shared/types'
+import { JsonStore } from './store'
+import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } from '../utils/fs'
+import { libraryDir } from './paths'
+import { ensureThumb, purgeCache } from './thumbnails'
+import { getSettings } from './settings'
+
+// ---------- 持久化 ----------
+const libraryStore = new JsonStore<LibraryData>('library', {
+  images: [],
+  categories: [],
+  tags: []
+})
+
+/** 首次启动：创建预置分类 */
+function ensureDefaultCategories(): void {
+  const data = libraryStore.get()
+  if (data.categories.length === 0) {
+    data.categories = DEFAULT_CATEGORY_NAMES.map((name, i) => ({
+      id: genId(),
+      name,
+      createdAt: Date.now() + i
+    }))
+    libraryStore.flush()
+  }
+}
+ensureDefaultCategories()
+
+export function getLibrary(): LibraryData {
+  return libraryStore.get()
+}
+
+/** 保存并返回最新数据（标签列表从图片自动归并） */
+function commit(mutator: (data: LibraryData) => void): LibraryData {
+  const data = libraryStore.get()
+  mutator(data)
+  // 标签列表始终由图片记录归并，避免悬挂标签
+  data.tags = Array.from(new Set(data.images.flatMap((img) => img.tags))).sort((a, b) =>
+    a.localeCompare(b, 'zh-CN')
+  )
+  libraryStore.flush()
+  return { ...data }
+}
+
+// ---------- 导入 ----------
+
+/** 读取单张图片元信息（sharp 解码，HEIC 不依赖系统编解码器） */
+async function buildImageRecord(srcPath: string): Promise<Omit<ImageItem, 'id' | 'categoryId' | 'tags' | 'favorite' | 'addedAt'>> {
+  const meta = await sharp(srcPath).metadata()
+  const stat = await fsp.stat(srcPath)
+  const ext = path.extname(srcPath).toLowerCase()
+  // heif/heic 归一化为 heic 展示
+  const format = (ext === '.heif' ? 'heic' : ext.replace('.', '')) as ImageFormat
+  return {
+    fileName: path.basename(srcPath),
+    path: srcPath,
+    sourcePath: srcPath,
+    hash: await hashFile(srcPath),
+    width: meta.width ?? 0,
+    height: meta.height ?? 0,
+    sizeBytes: stat.size,
+    format
+  }
+}
+
+/**
+ * 批量导入图片（文件或文件夹混合）
+ * - copy 模式：复制到 userData/library/ 统一管理（默认）
+ * - reference 模式：仅记录原路径，不复制文件
+ * - 依据内容哈希去重，重复图片自动跳过
+ */
+export async function importPaths(paths: string[]): Promise<ImportResult> {
+  // 展开文件夹
+  const files: string[] = []
+  for (const p of paths) {
+    const stat = fs.statSync(p, { throwIfNoEntry: false })
+    if (!stat) continue
+    if (stat.isDirectory()) files.push(...collectImageFiles(p, SUPPORTED_EXTENSIONS))
+    else if (SUPPORTED_EXTENSIONS.includes(path.extname(p).toLowerCase())) files.push(p)
+  }
+
+  const result: ImportResult = { added: 0, skipped: 0, reasons: [] }
+  const importMode = getSettings().importMode
+  const existingHashes = new Set(getLibrary().images.map((img) => img.hash))
+
+  for (const src of files) {
+    const base = path.basename(src)
+    try {
+      const record = await buildImageRecord(src)
+      if (existingHashes.has(record.hash)) {
+        result.skipped++
+        result.reasons.push(`${base}：内容重复，已跳过`)
+        continue
+      }
+
+      // 复制模式：入库保存（文件名冲突时追加短 ID）
+      let storedPath = src
+      if (importMode === 'copy') {
+        const { base: nameOnly, ext } = splitFileName(base)
+        let target = path.join(libraryDir(), sanitizeFileName(base))
+        if (fs.existsSync(target)) target = path.join(libraryDir(), `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`)
+        await fsp.copyFile(src, target)
+        storedPath = target
+      }
+
+      const image: ImageItem = {
+        id: genId(),
+        ...record,
+        path: storedPath,
+        fileName: path.basename(storedPath),
+        categoryId: null,
+        tags: [],
+        favorite: false,
+        addedAt: Date.now()
+      }
+      existingHashes.add(image.hash)
+      commit((data) => data.images.push(image))
+      // 预生成缩略图，画廊首屏即有图
+      await ensureThumb(image).catch(() => undefined)
+      result.added++
+    } catch (err) {
+      result.skipped++
+      result.reasons.push(`${base}：无法解析（可能已损坏或格式不受支持）`)
+      console.error('[library] 导入失败:', src, err)
+    }
+  }
+  return result
+}
+
+// ---------- 图片操作 ----------
+
+/** 重命名：复制模式同步重命名库内文件；引用模式仅更新显示名（不动用户原文件） */
+export function renameImage(id: string, newFileName: string): LibraryData {
+  const image = getLibrary().images.find((img) => img.id === id)
+  if (!image) return getLibrary()
+  const safe = sanitizeFileName(newFileName)
+  const { ext } = splitFileName(image.fileName)
+  const nextName = ext && !safe.toLowerCase().endsWith(ext) ? `${safe}${ext}` : safe
+
+  if (image.path === image.sourcePath) {
+    // 引用模式：只改记录
+    return commit((data) => {
+      const target = data.images.find((img) => img.id === id)
+      if (target) target.fileName = nextName
+    })
+  }
+  const target = path.join(path.dirname(image.path), nextName)
+  fs.renameSync(image.path, target)
+  return commit((data) => {
+    const item = data.images.find((img) => img.id === id)
+    if (item) {
+      item.path = target
+      item.fileName = nextName
+    }
+  })
+}
+
+/**
+ * 删除图片记录：
+ * - 复制模式：库内文件移入系统废纸篓（可恢复）
+ * - 引用模式：仅移除记录，不删除用户磁盘上的原文件
+ */
+export async function deleteImage(id: string): Promise<LibraryData> {
+  const image = getLibrary().images.find((img) => img.id === id)
+  if (image && image.path !== image.sourcePath) {
+    await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
+  }
+  purgeCache(id)
+  return commit((data) => {
+    data.images = data.images.filter((img) => img.id !== id)
+  })
+}
+
+/** 更新图片属性（收藏 / 分类 / 标签） */
+export function updateImage(id: string, patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>): LibraryData {
+  return commit((data) => {
+    const target = data.images.find((img) => img.id === id)
+    if (!target) return
+    if (patch.favorite !== undefined) target.favorite = patch.favorite
+    if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
+    if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+  })
+}
+
+/** 基于原图裁剪并另存为新图片（sharp 在原图上执行，保证画质） */
+export async function cropToNewImage(imageId: string, rect: CropRect, label: string): Promise<ImageItem> {
+  const image = getLibrary().images.find((img) => img.id === imageId)
+  if (!image) throw new Error('原图不存在')
+  const { base } = splitFileName(image.fileName)
+  const newName = `${sanitizeFileName(label || `${base}_裁剪`)}_${genId().slice(-4)}.jpg`
+  const target = path.join(libraryDir(), newName)
+  await sharp(image.path)
+    .extract({ left: Math.round(rect.x), top: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })
+    .jpeg({ quality: 95 })
+    .toFile(target)
+
+  const stat = await fsp.stat(target)
+  const newImage: ImageItem = {
+    id: genId(),
+    fileName: newName,
+    path: target,
+    sourcePath: target,
+    hash: await hashFile(target),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+    sizeBytes: stat.size,
+    format: 'jpeg',
+    categoryId: image.categoryId,
+    tags: [...image.tags],
+    favorite: false,
+    addedAt: Date.now()
+  }
+  commit((data) => data.images.push(newImage))
+  await ensureThumb(newImage).catch(() => undefined)
+  return newImage
+}
+
+// ---------- 分类 ----------
+
+export function addCategory(name: string): LibraryData {
+  const safe = name.trim()
+  if (!safe) return getLibrary()
+  return commit((data) => {
+    if (data.categories.some((c) => c.name === safe)) return
+    data.categories.push({ id: genId(), name: safe, createdAt: Date.now() })
+  })
+}
+
+export function renameCategory(id: string, name: string): LibraryData {
+  return commit((data) => {
+    const target = data.categories.find((c) => c.id === id)
+    if (target && name.trim()) target.name = name.trim()
+  })
+}
+
+/** 删除分类：该分类下图片回到"未分类"，不删除任何图片文件 */
+export function deleteCategory(id: string): LibraryData {
+  return commit((data) => {
+    data.categories = data.categories.filter((c) => c.id !== id)
+    for (const img of data.images) {
+      if (img.categoryId === id) img.categoryId = null
+    }
+  })
+}
+
+/** 退出前落盘 */
+export function flushLibrary(): void {
+  libraryStore.flush()
+}
+
+export type { Category }

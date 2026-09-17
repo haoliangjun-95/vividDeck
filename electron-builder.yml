@@ -1,0 +1,67 @@
+# electron-builder 打包配置
+# - 一套配置双平台：Windows (NSIS x64) / macOS (dmg arm64+x64)
+# - 跨平台建议：dmg 在 macOS 上构建，exe 在 Windows 上构建（原生依赖 sharp 需对应平台二进制）
+appId: com.vividdeck.app
+productName: vividDeck
+copyright: MIT License
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - "!**/.map"
+
+# 主进程外部依赖：随包分发并解压出 asar（sharp 原生绑定与 wallpaper 的原生二进制必须落盘才能执行）
+asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@img/**"
+  - "**/node_modules/wallpaper/**"
+
+# 打进安装包的运行时依赖（package.json dependencies）
+# electron-builder 自动按 dependencies 收录，无需额外配置
+
+# ---------- macOS ----------
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  # 未配置开发者证书时使用 ad-hoc 签名（本机可直接运行；分发时建议配置正式签名与公证）
+  identity: null
+  icon: build/icon.icns
+  extendInfo:
+    NSDesktopFolderUsageDescription: 用于读取您拖入或选择的桌面图片文件。
+    NSDocumentsFolderUsageDescription: 用于读取您选择的"文稿"文件夹中的图片。
+    NSDownloadsFolderUsageDescription: 用于读取您拖入或选择的下载图片文件。
+
+dmg:
+  title: vividDeck ${version}
+  artifactName: vividDeck-${version}-${arch}.dmg
+
+# ---------- Windows ----------
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: vividDeck-Setup-${version}.exe
+  shortcutName: vividDeck
+  # 中文安装界面
+  language: 2052
+  installerLanguages:
+    - zh_CN
+  include: build/installer.nsh
+
+# ---------- Linux（顺手支持，非交付目标） ----------
+linux:
+  target: [AppImage]
+  category: Utility
+  icon: build/icon.png
