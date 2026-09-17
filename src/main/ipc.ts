@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { IPC } from '@shared/ipc'
-import type { CropRect, FillMode, ImageItem } from '@shared/types'
+import type { CropRect, FillMode, ImageItem, SyncConfig, SyncDownloadScope } from '@shared/types'
 import {
   addCategory,
   cropToNewImage,
@@ -23,6 +23,8 @@ import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './serv
 import { clearHistory, listHistory, recordApply } from './services/history'
 import { flushSettings, getSettings, updateSettings } from './services/settings'
 import { customStorageDirMissing, dirSize, hasCustomStorageDir, storageRoot } from './services/paths'
+import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
+import { downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { flushSlideshow } from './services/slideshow'
@@ -194,11 +196,43 @@ export function registerIpcHandlers(): void {
     wrap(async (payload: { imageId: string; monitorIds: string[]; fillMode: FillMode }) => {
       const image = getLibrary().images.find((img) => img.id === payload.imageId)
       if (!image) throw new Error('图片不存在（可能已被删除）')
-      const result = await applyWallpaper(image.path, payload.monitorIds, payload.fillMode)
+      // 云端图按需下载后再设置（本地已有文件则直接跳过）
+      const filePath = image.localFile && fs.existsSync(image.path)
+        ? image.path
+        : await ensureLocal(payload.imageId)
+      const result = await applyWallpaper(filePath, payload.monitorIds, payload.fillMode)
       // 设置成功 → 写入历史
       recordApply(image.id, result.applied, payload.fillMode)
       return result
     })
+  )
+
+  // ---------- MinIO 同步 ----------
+  ipcMain.handle(IPC.SYNC_GET_CONFIG, () => ({
+    config: getSyncCfg(),
+    status: getSyncStatus(),
+    secretSet: syncHasSecret()
+  }))
+
+  ipcMain.handle(IPC.SYNC_SET_CONFIG, wrap((patch: Partial<SyncConfig>) => updateSyncConfig(patch)))
+
+  ipcMain.handle(
+    IPC.SYNC_SET_SECRET,
+    wrap((payload: { secretKey: string }) => saveSecret(payload.secretKey))
+  )
+
+  ipcMain.handle(IPC.SYNC_TEST, () => testConnection())
+
+  ipcMain.handle(IPC.SYNC_NOW, wrap(() => syncNow()))
+
+  ipcMain.handle(
+    IPC.SYNC_DOWNLOAD,
+    wrap((scope: SyncDownloadScope) => downloadScope(scope))
+  )
+
+  ipcMain.handle(
+    IPC.SYNC_ENSURE_LOCAL,
+    wrap(async (payload: { imageId: string }) => ({ path: await ensureLocal(payload.imageId) }))
   )
 
   // ---------- 轮播 ----------

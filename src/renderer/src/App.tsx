@@ -52,6 +52,14 @@ export default function App(): JSX.Element {
     return off
   }, [load, toast])
 
+  // 同步导致素材库变化（远端拉取/按需下载完成）→ 刷新
+  useEffect(() => {
+    const off = window.api.onLibraryChanged(() => {
+      void load()
+    })
+    return off
+  }, [load])
+
   // 窗口级拖放导入（任意位置）
   useEffect(() => {
     const onDragOver = (e: DragEvent): void => {

@@ -33,6 +33,15 @@ export const IPC = {
   SLIDESHOW_SET: 'slideshow:set', // SlideshowConfig(部分) -> SlideshowConfig
   SLIDESHOW_NEXT: 'slideshow:next', // -> void（手动触发下一张）
 
+  // ---------- 二期：MinIO 同步 ----------
+  SYNC_GET_CONFIG: 'sync:getConfig', // -> { config, status, secretSet }
+  SYNC_SET_CONFIG: 'sync:setConfig', // Partial<SyncConfig> -> SyncConfig
+  SYNC_SET_SECRET: 'sync:setSecret', // { secretKey } -> { ok }
+  SYNC_TEST: 'sync:test', // -> { ok, bucketCreated, error? }
+  SYNC_NOW: 'sync:now', // -> SyncResultStats
+  SYNC_DOWNLOAD: 'sync:download', // SyncDownloadScope -> { downloaded, failed }
+  SYNC_ENSURE_LOCAL: 'sync:ensureLocal', // { imageId } -> { path }（按需下载单张）
+
   // 历史
   HISTORY_LIST: 'history:list', // -> HistoryItem[]
   HISTORY_APPLY: 'history:apply', // { historyId } -> { ok, error? }
@@ -47,5 +56,11 @@ export const IPC_EVENTS = {
   /** 轮播切换了壁纸（携带历史记录） */
   SLIDESHOW_TICK: 'slideshow:tick',
   /** 轮播配置变化（暂停/恢复等） */
-  SLIDESHOW_CHANGED: 'slideshow:changed'
+  SLIDESHOW_CHANGED: 'slideshow:changed',
+  /** 同步进度（阶段/当前/总数/说明） */
+  SYNC_PROGRESS: 'sync:progress',
+  /** 同步结束（成功或失败） */
+  SYNC_DONE: 'sync:done',
+  /** 同步导致素材库数据变化（渲染层刷新） */
+  LIBRARY_CHANGED: 'library:changed'
 } as const

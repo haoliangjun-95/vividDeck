@@ -7,12 +7,14 @@
  * - 每次切换成功后写入壁纸历史，并推送事件到渲染层（托盘气泡提示）
  */
 import { BrowserWindow } from 'electron'
+import fs from 'node:fs'
 import { IPC_EVENTS } from '@shared/ipc'
 import type { SlideshowConfig } from '@shared/types'
 import { JsonStore } from './store'
 import { getLibrary } from './library'
 import { applyWallpaper, listMonitors } from './wallpaper'
 import { recordApply } from './history'
+import { ensureLocal } from './sync/engine'
 
 const DEFAULT_CONFIG: SlideshowConfig = {
   enabled: false,
@@ -108,6 +110,12 @@ async function tick(manual = false): Promise<void> {
     const image = getLibrary().images.find((img) => img.id === imageId)
     if (!image) return
 
+    // 云端图（按需下载模式）先取回本地再设置
+    let filePath = image.path
+    if (!image.localFile || !fs.existsSync(image.path)) {
+      filePath = await ensureLocal(image.id)
+    }
+
     // 校验目标显示器仍存在；配置的都被拔掉则退回全部
     let monitorIds = config.monitorIds
     if (monitorIds.length > 0) {
@@ -115,7 +123,7 @@ async function tick(manual = false): Promise<void> {
       monitorIds = monitorIds.filter((id) => alive.includes(id))
     }
 
-    const result = await applyWallpaper(image.path, monitorIds, config.fillMode)
+    const result = await applyWallpaper(filePath, monitorIds, config.fillMode)
     const entry = recordApply(imageId, result.applied, config.fillMode)
     slideshowStore.set({ lastAppliedAt: Date.now() })
     broadcast(IPC_EVENTS.SLIDESHOW_TICK, { entry, manual })

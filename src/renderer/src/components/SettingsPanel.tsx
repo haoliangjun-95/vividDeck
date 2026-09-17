@@ -2,10 +2,11 @@
  * 设置面板：外观主题、默认填充模式、导入模式、存储位置（可整体迁移）、同步占位
  */
 import React, { useEffect, useState } from 'react'
-import { FolderOpen, HardDrive, Loader2, Lock } from 'lucide-react'
+import { FolderOpen, HardDrive, Loader2 } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { formatBytes } from '../lib/utils'
 import { FILL_MODE_LABELS, type AppSettings, type FillMode } from '@shared/types'
+import { SyncSection } from './SyncSection'
 
 const FILL_HINTS: Record<FillMode, string> = {
   fill: '覆盖全屏，裁掉多余',
@@ -194,19 +195,8 @@ export function SettingsPanel(): JSX.Element {
         )}
       </section>
 
-      {/* 同步（二期预留） */}
-      <section className="space-y-2 opacity-50">
-        <div className="flex items-center gap-1.5 font-medium">
-          <Lock size={13} />
-          联网同步（MinIO）
-          <span className="rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
-            二期开放
-          </span>
-        </div>
-        <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-xs leading-relaxed text-neutral-400 dark:border-neutral-700">
-          支持连接自建 MinIO / S3 对象存储，跨设备同步素材库。一期已预留内容哈希与稳定 ID，二期开放后无需迁移数据。
-        </div>
-      </section>
+      {/* MinIO 多设备同步 */}
+      <SyncSection />
 
       <div className="border-t border-neutral-200 pt-3 text-xs text-neutral-400 dark:border-neutral-800">
         vividDeck v{version}

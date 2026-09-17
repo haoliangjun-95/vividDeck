@@ -254,6 +254,9 @@ export function Lightbox(): JSX.Element | null {
       {/* 顶部操作条 */}
       <div className="flex items-center gap-1 px-3 py-2 text-white">
         <span className="mr-2 max-w-[40%] truncate text-sm text-white/70">{image.fileName}</span>
+        {!image.localFile && (
+          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white/80">云端 · 打开时自动下载</span>
+        )}
         <button
           className={`btn !p-2 ${image.favorite ? '!text-amber-400' : '!text-white/80'}`}
           title="收藏"

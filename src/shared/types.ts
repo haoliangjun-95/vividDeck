@@ -11,15 +11,15 @@ export type FillMode = 'fill' | 'stretch' | 'center' | 'fit'
 
 /** 素材库图片记录 */
 export interface ImageItem {
-  /** 稳定唯一 ID（nanoid 风格），跨设备同步的身份基础（二期 MinIO 预留） */
+  /** 稳定唯一 ID（nanoid 风格），跨设备同步的身份基础 */
   id: string
   /** 当前文件名（重命名会同步修改） */
   fileName: string
-  /** 媒体库内绝对路径（引用模式则为原文件路径） */
+  /** 媒体库内绝对路径（引用模式则为原文件路径；远端图按需下载后回填） */
   path: string
   /** 引用模式下的原文件路径；复制模式与 path 相同 */
   sourcePath: string
-  /** 内容哈希（sha1，用于去重；二期同步增量上传的基础） */
+  /** 内容哈希（sha1，用于去重；多设备增量同步的基础） */
   hash: string
   width: number
   height: number
@@ -30,6 +30,12 @@ export interface ImageItem {
   tags: string[]
   favorite: boolean
   addedAt: number
+  /** 记录最后修改时间（二期同步 LWW 合并依据） */
+  updatedAt: number
+  /** 最后修改设备 ID（LWW 相同时间戳时的决胜字段） */
+  updatedBy?: string
+  /** 本地是否已有图片文件（远端按需下载的图为 false） */
+  localFile: boolean
 }
 
 /** 自定义分类 */
@@ -37,6 +43,8 @@ export interface Category {
   id: string
   name: string
   createdAt: number
+  /** 记录最后修改时间（同步 LWW 依据） */
+  updatedAt: number
 }
 
 export interface LibraryData {
@@ -108,6 +116,93 @@ export interface AppSettings {
    * 全部素材、缓存与 JSON 数据都在该目录下，可整体迁移到其他磁盘。
    */
   storageDir: string
+}
+
+// ==================== 二期：MinIO 多设备同步 ====================
+
+/** MinIO 连接配置（secretKey 经 safeStorage 加密单独存储，不在此明文） */
+export interface SyncConfig {
+  enabled: boolean
+  /** 服务地址（域名或 IP，不含协议） */
+  endpoint: string
+  port: number
+  useSSL: boolean
+  bucket: string
+  accessKey: string
+  /** 启动与变更后自动同步（关闭则仅手动触发） */
+  autoSync: boolean
+}
+
+/** 同步状态快照（设置页展示用） */
+export interface SyncStatus {
+  configured: boolean
+  hasSecret: boolean
+  enabled: boolean
+  running: boolean
+  lastSyncAt: number | null
+  lastError: string | null
+  lastResult: SyncResultStats | null
+  /** 云端图片中本地未下载的数量 */
+  cloudOnlyCount: number
+}
+
+/** 一次同步的结果统计 */
+export interface SyncResultStats {
+  pushed: number
+  pulled: number
+  uploaded: number
+  downloaded: number
+  conflicts: number
+  durationMs: number
+}
+
+/** 同步进度事件（主进程 → 渲染层） */
+export interface SyncProgress {
+  phase: 'connecting' | 'merging' | 'uploading' | 'downloading' | 'finalizing'
+  current: number
+  total: number
+  message: string
+}
+
+/** 远端清单中的图片记录（传输用精简结构） */
+export interface SyncImageRecord {
+  id: string
+  fileName: string
+  hash: string
+  width: number
+  height: number
+  sizeBytes: number
+  format: ImageFormat
+  categoryId: string | null
+  tags: string[]
+  favorite: boolean
+  addedAt: number
+  updatedAt: number
+  updatedBy: string
+}
+
+/** 删除墓碑 */
+export interface SyncTombstone {
+  id: string
+  kind: 'image' | 'category'
+  deletedAt: number
+  deletedBy: string
+}
+
+/** 远端 manifest.json 结构 */
+export interface SyncManifest {
+  version: number
+  updatedAt: number
+  updatedBy: string
+  images: SyncImageRecord[]
+  categories: Category[]
+  tombstones: SyncTombstone[]
+}
+
+/** 批量下载范围 */
+export interface SyncDownloadScope {
+  type: 'all' | 'category' | 'favorite'
+  categoryId?: string
 }
 
 /** 导入结果统计 */

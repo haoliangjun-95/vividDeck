@@ -15,6 +15,8 @@ import { customStorageDirMissing } from './services/paths'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
+import { flushSyncConfig } from './services/sync/store'
+import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -107,7 +109,12 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: '打开 vividDeck', click: () => showMainWindow() },
       { type: 'separator' },
-      { label: '下一张壁纸', click: () => void trayNext() },
+      { label: '下一张壁纸', click: () => trayNext() },
+      {
+        label: '立即同步',
+        click: () =>
+          void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
+      },
       { type: 'separator' },
       { label: '退出', click: () => quitApp() }
     ])
@@ -190,6 +197,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   initSlideshow()
+  initSyncEngine()
 
   app.on('activate', () => {
     // macOS 点击 Dock 图标重新显示窗口
@@ -198,10 +206,15 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  // 标记真实退出：托盘菜单 / Cmd+Q / 外部 SIGTERM（logout 等）都会经过这里；
+  // 未置标记时窗口 close 会被"隐藏到托盘"逻辑拦截，导致应用杀不死
+  ;(app as unknown as { __isQuitting?: boolean }).__isQuitting = true
   // 退出前确保全部数据落盘
   flushLibrary()
   flushHistory()
   flushSlideshow()
+  flushSyncConfig()
+  flushSyncEngine()
 })
 
 // 托盘常驻：窗口全部关闭不退出应用（由托盘菜单或 Cmd+Q 退出）

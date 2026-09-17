@@ -22,6 +22,9 @@ import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } f
 import { libraryDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
+import { getDeviceId } from './device'
+import { addTombstone } from './tombstones'
+import type { SyncImageRecord } from '@shared/types'
 
 // ---------- 持久化 ----------
 const libraryStore = new JsonStore<LibraryData>('library', {
@@ -30,19 +33,68 @@ const libraryStore = new JsonStore<LibraryData>('library', {
   tags: []
 })
 
-/** 首次启动：创建预置分类 */
+/** 素材库变化监听（同步引擎注册，用于防抖触发增量同步） */
+const changeListeners = new Set<() => void>()
+
+export function onLibraryChanged(cb: () => void): () => void {
+  changeListeners.add(cb)
+  return () => changeListeners.delete(cb)
+}
+
+function notifyChanged(): void {
+  for (const cb of changeListeners) {
+    try {
+      cb()
+    } catch (err) {
+      console.error('[library] 变更监听器执行失败:', err)
+    }
+  }
+}
+
+/** 记录时间戳（同步 LWW 依据） */
+function stamp<T extends { updatedAt?: number; updatedBy?: string }>(record: T): void {
+  record.updatedAt = Date.now()
+  record.updatedBy = getDeviceId()
+}
+
+/** 首次启动：创建预置分类；并把一期旧记录补齐同步字段（updatedAt/localFile） */
 function ensureDefaultCategories(): void {
   const data = libraryStore.get()
   if (data.categories.length === 0) {
     data.categories = DEFAULT_CATEGORY_NAMES.map((name, i) => ({
       id: genId(),
       name,
-      createdAt: Date.now() + i
+      createdAt: Date.now() + i,
+      updatedAt: Date.now()
     }))
     libraryStore.flush()
   }
 }
 ensureDefaultCategories()
+
+/** 二期字段 backfill：一期记录无 updatedAt / localFile，按本地文件实际存在情况补齐 */
+function backfillSyncFields(): void {
+  const data = libraryStore.get()
+  let dirty = false
+  for (const cat of data.categories) {
+    if (cat.updatedAt === undefined) {
+      cat.updatedAt = cat.createdAt
+      dirty = true
+    }
+  }
+  for (const img of data.images) {
+    if (img.updatedAt === undefined) {
+      img.updatedAt = img.addedAt
+      dirty = true
+    }
+    if (img.localFile === undefined) {
+      img.localFile = fs.existsSync(img.path)
+      dirty = true
+    }
+  }
+  if (dirty) libraryStore.flush()
+}
+backfillSyncFields()
 
 export function getLibrary(): LibraryData {
   return libraryStore.get()
@@ -57,13 +109,14 @@ function commit(mutator: (data: LibraryData) => void): LibraryData {
     a.localeCompare(b, 'zh-CN')
   )
   libraryStore.flush()
+  notifyChanged()
   return { ...data }
 }
 
 // ---------- 导入 ----------
 
 /** 读取单张图片元信息（sharp 解码，HEIC 不依赖系统编解码器） */
-async function buildImageRecord(srcPath: string): Promise<Omit<ImageItem, 'id' | 'categoryId' | 'tags' | 'favorite' | 'addedAt'>> {
+async function buildImageRecord(srcPath: string): Promise<Omit<ImageItem, 'id' | 'categoryId' | 'tags' | 'favorite' | 'addedAt' | 'updatedAt' | 'updatedBy' | 'localFile'>> {
   const meta = await sharp(srcPath).metadata()
   const stat = await fsp.stat(srcPath)
   const ext = path.extname(srcPath).toLowerCase()
@@ -129,7 +182,10 @@ export async function importPaths(paths: string[]): Promise<ImportResult> {
         categoryId: null,
         tags: [],
         favorite: false,
-        addedAt: Date.now()
+        addedAt: Date.now(),
+        updatedAt: Date.now(),
+        updatedBy: getDeviceId(),
+        localFile: true
       }
       existingHashes.add(image.hash)
       commit((data) => data.images.push(image))
@@ -159,7 +215,10 @@ export function renameImage(id: string, newFileName: string): LibraryData {
     // 引用模式：只改记录
     return commit((data) => {
       const target = data.images.find((img) => img.id === id)
-      if (target) target.fileName = nextName
+      if (target) {
+        target.fileName = nextName
+        stamp(target)
+      }
     })
   }
   const target = path.join(path.dirname(image.path), nextName)
@@ -169,6 +228,7 @@ export function renameImage(id: string, newFileName: string): LibraryData {
     if (item) {
       item.path = target
       item.fileName = nextName
+      stamp(item)
     }
   })
 }
@@ -177,6 +237,7 @@ export function renameImage(id: string, newFileName: string): LibraryData {
  * 删除图片记录：
  * - 复制模式：库内文件移入系统废纸篓（可恢复）
  * - 引用模式：仅移除记录，不删除用户磁盘上的原文件
+ * - 写入墓碑，经同步传播到其他设备
  */
 export async function deleteImage(id: string): Promise<LibraryData> {
   const image = getLibrary().images.find((img) => img.id === id)
@@ -184,6 +245,7 @@ export async function deleteImage(id: string): Promise<LibraryData> {
     await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
   }
   purgeCache(id)
+  addTombstone(id, 'image')
   return commit((data) => {
     data.images = data.images.filter((img) => img.id !== id)
   })
@@ -197,6 +259,7 @@ export function updateImage(id: string, patch: Partial<Pick<ImageItem, 'favorite
     if (patch.favorite !== undefined) target.favorite = patch.favorite
     if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
     if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+    stamp(target)
   })
 }
 
@@ -226,7 +289,10 @@ export async function cropToNewImage(imageId: string, rect: CropRect, label: str
     categoryId: image.categoryId,
     tags: [...image.tags],
     favorite: false,
-    addedAt: Date.now()
+    addedAt: Date.now(),
+    updatedAt: Date.now(),
+    updatedBy: getDeviceId(),
+    localFile: true
   }
   commit((data) => data.images.push(newImage))
   await ensureThumb(newImage).catch(() => undefined)
@@ -240,25 +306,77 @@ export function addCategory(name: string): LibraryData {
   if (!safe) return getLibrary()
   return commit((data) => {
     if (data.categories.some((c) => c.name === safe)) return
-    data.categories.push({ id: genId(), name: safe, createdAt: Date.now() })
+    data.categories.push({ id: genId(), name: safe, createdAt: Date.now(), updatedAt: Date.now() })
   })
 }
 
 export function renameCategory(id: string, name: string): LibraryData {
   return commit((data) => {
     const target = data.categories.find((c) => c.id === id)
-    if (target && name.trim()) target.name = name.trim()
+    if (target && name.trim()) {
+      target.name = name.trim()
+      target.updatedAt = Date.now()
+    }
   })
 }
 
-/** 删除分类：该分类下图片回到"未分类"，不删除任何图片文件 */
+/** 删除分类：该分类下图片回到"未分类"，不删除任何图片文件；墓碑同步传播 */
 export function deleteCategory(id: string): LibraryData {
+  addTombstone(id, 'category')
   return commit((data) => {
     data.categories = data.categories.filter((c) => c.id !== id)
     for (const img of data.images) {
-      if (img.categoryId === id) img.categoryId = null
+      if (img.categoryId === id) {
+        img.categoryId = null
+        stamp(img)
+      }
     }
   })
+}
+
+// ---------- 同步引擎专用入口 ----------
+
+/**
+ * 应用远端合并结果（sync/engine 调用）：
+ * 本地有文件的记录保留本地 path/localFile，其余按合并结果落地。
+ */
+export function applySyncMerge(images: ImageItem[], categories: Category[]): LibraryData {
+  return commit((data) => {
+    data.images = images
+    data.categories = categories
+  })
+}
+
+/** 按需下载完成后回填本地文件路径（sync 引擎调用） */
+export function markLocalFile(id: string, filePath: string): void {
+  commit((data) => {
+    const target = data.images.find((img) => img.id === id)
+    if (target) {
+      target.path = filePath
+      target.sourcePath = filePath
+      target.localFile = true
+      // 仅回填文件路径，不更新 updatedAt（避免覆盖远端元数据的时间戳）
+    }
+  })
+}
+
+/** ImageItem → 同步传输记录（剥离本地路径等设备相关字段） */
+export function toSyncRecord(img: ImageItem): SyncImageRecord {
+  return {
+    id: img.id,
+    fileName: img.fileName,
+    hash: img.hash,
+    width: img.width,
+    height: img.height,
+    sizeBytes: img.sizeBytes,
+    format: img.format,
+    categoryId: img.categoryId,
+    tags: img.tags,
+    favorite: img.favorite,
+    addedAt: img.addedAt,
+    updatedAt: img.updatedAt,
+    updatedBy: img.updatedBy ?? ''
+  }
 }
 
 /** 退出前落盘 */

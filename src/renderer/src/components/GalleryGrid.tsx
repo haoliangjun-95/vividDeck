@@ -2,7 +2,7 @@
  * 画廊网格：缩略图网格、懒加载分页、拖拽源、右键菜单（设为壁纸等快捷操作）
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Crop, FolderInput, Heart, ImageUp, Monitor, Pencil, Trash2 } from 'lucide-react'
+import { Cloud, Crop, FolderInput, Heart, ImageUp, Monitor, Pencil, Trash2 } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
@@ -59,6 +59,17 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
           <span>{formatLabel(image.format)}</span>
         </div>
       </div>
+
+      {/* 云端图片角标（本地无文件，查看/设壁纸时按需下载） */}
+      {!image.localFile && (
+        <span
+          className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] text-white/90 backdrop-blur"
+          title="云端图片：打开或设为壁纸时自动下载"
+        >
+          <Cloud size={10} />
+          云端
+        </span>
+      )}
 
       {/* 收藏星标 */}
       <button

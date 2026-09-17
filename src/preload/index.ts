@@ -14,7 +14,12 @@ import type {
   ImportResult,
   LibraryData,
   MonitorInfo,
-  SlideshowConfig
+  SlideshowConfig,
+  SyncConfig,
+  SyncDownloadScope,
+  SyncProgress,
+  SyncResultStats,
+  SyncStatus
 } from '@shared/types'
 
 /** 统一响应结构 */
@@ -75,6 +80,21 @@ const api = {
   /** HTML File 对象 → 本地绝对路径（Electron 32+ File.path 已移除，须用 webUtils） */
   filePathOf: (file: File) => webUtils.getPathForFile(file),
 
+  // ---------- MinIO 同步 ----------
+  getSyncInfo: () =>
+    ipcRenderer.invoke(IPC.SYNC_GET_CONFIG) as Promise<{
+      config: SyncConfig
+      status: SyncStatus
+      secretSet: boolean
+    }>,
+  setSyncConfig: (patch: Partial<SyncConfig>) => call<SyncConfig>(IPC.SYNC_SET_CONFIG, patch),
+  setSyncSecret: (secretKey: string) => call<{ encrypted: boolean }>(IPC.SYNC_SET_SECRET, { secretKey }),
+  testSync: () =>
+    ipcRenderer.invoke(IPC.SYNC_TEST) as Promise<{ ok: boolean; bucketCreated?: boolean; error?: string }>,
+  syncNow: () => call<SyncResultStats>(IPC.SYNC_NOW),
+  syncDownload: (scope: SyncDownloadScope) => call<{ downloaded: number; failed: number }>(IPC.SYNC_DOWNLOAD, scope),
+  syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),
+
   // ---------- 事件订阅（轮播推送） ----------
   onSlideshowTick: (cb: (payload: { entry: HistoryItem; manual: boolean }) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, payload: { entry: HistoryItem; manual: boolean }): void => cb(payload)
@@ -88,6 +108,29 @@ const api = {
     ipcRenderer.on(IPC_EVENTS.SLIDESHOW_CHANGED, listener)
     return () => {
       ipcRenderer.removeListener(IPC_EVENTS.SLIDESHOW_CHANGED, listener)
+    }
+  },
+
+  // ---------- 事件订阅（同步进度） ----------
+  onSyncProgress: (cb: (p: SyncProgress) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: SyncProgress): void => cb(p)
+    ipcRenderer.on(IPC_EVENTS.SYNC_PROGRESS, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.SYNC_PROGRESS, listener)
+    }
+  },
+  onSyncDone: (cb: (r: { ok: boolean; stats?: SyncResultStats; error?: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, r: { ok: boolean; stats?: SyncResultStats; error?: string }): void => cb(r)
+    ipcRenderer.on(IPC_EVENTS.SYNC_DONE, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.SYNC_DONE, listener)
+    }
+  },
+  onLibraryChanged: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on(IPC_EVENTS.LIBRARY_CHANGED, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.LIBRARY_CHANGED, listener)
     }
   }
 }

@@ -23,7 +23,12 @@
 - **数据本地持久化 + 存储位置可更换**：全部数据默认在 `用户数据目录/vividDeck/storage/`，支持一键整体迁移到其他磁盘 / 外置硬盘（先复制后切换，中断不丢数据；外置盘未挂载时启动有保护提示）
 - **暗色 / 亮色主题**：跟随系统自动切换，也可手动固定
 
-> 二期规划：MinIO / S3 自建对象存储同步（一期已预留内容哈希、稳定 ID 与设置页入口）。
+### 多设备同步（MinIO / S3，二期）
+- 连接自建 MinIO / S3 对象存储，多台电脑共享壁纸库：元数据（分类/标签/收藏）全量双向同步
+- 图片文件按需下载（查看/设壁纸/轮播时自动拉取并缓存），支持"全部下载/下载收藏"离线准备；缩略图全量同步保证新设备画廊秒开
+- 冲突自动合并：记录级 LWW（最后修改者胜）+ 跨设备同图去重（收藏取或、标签并集）；删除以墓碑传播（90 天自动清理）
+- 每设备独立清单快照（CRDT 合并，并发安全），旧快照自动压缩；SecretKey 经系统密钥链加密存储
+- 自动同步（启动 + 变更后 30s 防抖）与手动同步（设置页 / 托盘菜单）
 
 ## 技术栈
 
@@ -33,6 +38,7 @@
 | 界面 | React 18 + TypeScript + Tailwind CSS + Zustand |
 | 图像处理 | sharp（HEIC 解码 / 缩略图 / 压缩 / 裁剪 / 填充模式预渲染） |
 | 壁纸设置 | macOS：[wallpaper](https://github.com/sindresorhus/wallpaper) 库（osascript 后备自动降级）；Windows：自研 PowerShell + `IDesktopWallpaper` COM 接口（SystemParametersInfo 兜底） |
+| 对象存储 | minio-js（多设备同步，S3 兼容） |
 | 打包 | electron-builder（NSIS exe / dmg） |
 
 双平台壁纸设置的差异化逻辑集中在：
@@ -114,10 +120,13 @@ src/
 ├── renderer/              # React 界面
 │   └── src/components/    # 画廊 / 灯箱 / 右键菜单 / 裁剪 / 轮播 / 历史 / 设置
 └── shared/                # 主/渲染共享类型与 IPC 契约
+├── services/sync/         # 二期：MinIO 同步（client/merge/engine/store）
 scripts/
 ├── make-icons.cjs         # 应用/托盘图标生成
 ├── smoke-wallpaper.mjs    # 壁纸链路冒烟测试（设置后自动还原）
-└── e2e-cdp.mjs            # CDP 端到端验证（导入/去重/协议/属性更新）
+├── e2e-cdp.mjs            # CDP 端到端验证（导入/去重/协议/属性更新）
+├── test-s3-server.mjs     # 本地 S3 测试服务（s3rver，开发用）
+└── e2e-sync.mjs           # 双设备同步闭环验证（配合 --user-data-dir 双实例）
 ```
 
 ## 数据存储（全部本地）
