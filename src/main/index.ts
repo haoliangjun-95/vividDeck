@@ -184,7 +184,7 @@ app.whenReady().then(() => {
   if (customStorageDirMissing()) {
     dialog.showErrorBox(
       '存储目录不可用',
-      'vividDeck 的数据存储目录当前无法访问（若使用外置磁盘，请先挂载后重试）。\n\n可以在挂载后重新启动应用，或删除以下位置的 settings.json 中的 storageDir 项以恢复默认目录。'
+      'vividDeck 的数据存储目录当前无法访问（若使用外置磁盘，请先挂载后重试）。\n\n可以在挂载后重新启动应用，或删除用户数据目录下的 storage-dir.json 文件以恢复默认目录。'
     )
     app.exit(1)
     return

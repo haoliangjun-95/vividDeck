@@ -21,7 +21,7 @@ import type {
   SyncStatus
 } from '@shared/types'
 import { JsonStore } from '../store'
-import { libraryDir } from '../paths'
+import { isRealFile, libraryDir } from '../paths'
 import { getLibrary, applySyncMerge, markLocalFile, onLibraryChanged } from '../library'
 import { ensureThumb, thumbPath } from '../thumbnails'
 import { getDeviceId } from '../device'
@@ -185,7 +185,7 @@ export async function syncNow(): Promise<SyncResultStats> {
 
     // 5) 上传缺失的二进制与缩略图（并发 2）
     const uploaded = getUploadedSet()
-    const withFile = merged.images.filter((img) => img.localFile && fs.existsSync(img.path))
+    const withFile = merged.images.filter((img) => img.localFile && isRealFile(img.path))
     const needUpload = withFile.filter((img) => !uploaded.has(img.hash))
     if (needUpload.length > 0) {
       progress({ phase: 'uploading', current: 0, total: needUpload.length, message: '' })
@@ -271,7 +271,7 @@ export async function testConnection(): Promise<{ ok: true; bucketCreated: boole
 export async function ensureLocal(imageId: string): Promise<string> {
   const image = getLibrary().images.find((img) => img.id === imageId)
   if (!image) throw new Error('图片不存在')
-  if (image.localFile && fs.existsSync(image.path)) return image.path
+  if (image.localFile && isRealFile(image.path)) return image.path
 
   const made = makeClient()
   if (!made) throw new Error('该图片仅在云端，请先配置并启用同步')

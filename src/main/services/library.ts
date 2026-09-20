@@ -19,7 +19,7 @@ import {
 } from '@shared/types'
 import { JsonStore } from './store'
 import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } from '../utils/fs'
-import { libraryDir } from './paths'
+import { isRealFile, libraryDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
 import { getDeviceId } from './device'
@@ -92,7 +92,7 @@ function backfillSyncFields(): void {
       dirty = true
     }
     if (img.localFile === undefined) {
-      img.localFile = fs.existsSync(img.path)
+      img.localFile = isRealFile(img.path)
       dirty = true
     }
   }
@@ -103,29 +103,35 @@ function backfillSyncFields(): void {
  * 路径自愈：存储目录迁移（v1.0 平铺布局 → storage/ 根目录、或用户更换存储位置）后，
  * 记录中的绝对路径可能仍指向旧位置——按文件名在当前媒体库目录找回并回写，
  * 同时修正 localFile 标记，避免"文件明明在本地却被标成云端"。
+ *
+ * 注意：判断一律用 isRealFile（必须是文件，目录不算）——云端记录 path 为空串时
+ * basename 也是空串，join 出媒体库目录本身，若用 existsSync 会被目录骗过，
+ * 把云端记录错标成本地（path 还被写成目录路径，点击 404、下载入口消失）。
  */
 function healLibraryPaths(): void {
   const data = libraryStore.get()
   let dirty = false
   for (const img of data.images) {
-    if (fs.existsSync(img.path)) {
+    if (isRealFile(img.path)) {
       if (!img.localFile) {
         img.localFile = true
         dirty = true
       }
       continue
     }
-    // 路径失效：尝试当前媒体库目录下的同名文件
-    const candidate = path.join(libraryDir(), path.basename(img.path))
-    if (fs.existsSync(candidate)) {
+    // 路径失效：尝试当前媒体库目录下的同名文件（空 basename 跳过，避免匹配到目录）
+    const name = path.basename(img.path)
+    const candidate = name ? path.join(libraryDir(), name) : ''
+    if (candidate && isRealFile(candidate)) {
       const wasReference = img.path !== img.sourcePath
       img.path = candidate
       if (!wasReference || !fs.existsSync(img.sourcePath)) img.sourcePath = candidate
       img.localFile = true
       dirty = true
     } else if (img.localFile) {
-      // 确实找不到本地文件：如实标记为云端
+      // 确实找不到本地文件：如实标记为云端，清掉无效路径（按需下载后回填）
       img.localFile = false
+      img.path = ''
       dirty = true
     }
   }

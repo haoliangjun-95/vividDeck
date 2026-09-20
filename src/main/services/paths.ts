@@ -27,10 +27,27 @@ export function defaultRoot(): string {
 }
 
 /**
+ * 自定义存储目录指针文件：位于 userData 根下（任何存储目录之外）。
+ * 迁移后用户可删除旧存储目录（README 建议），指针不受影响；
+ * 旧方案把标记写进存储目录内的 settings.json，启动引导永远读不到。
+ */
+const STORAGE_DIR_POINTER = 'storage-dir.json'
+
+/**
  * 直接从磁盘读取 storageDir 设置（模块初始化阶段使用，
  * 不能依赖 settings 服务 —— settings 服务的 JsonStore 又依赖本模块的 dataDir）
  */
 function readStorageDirSetting(): string {
+  // 1) userData 根下的指针文件（迁移流程写入的权威标记）
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(path.join(app.getPath('userData'), STORAGE_DIR_POINTER), 'utf-8')
+    ) as { storageDir?: string }
+    if (typeof parsed.storageDir === 'string' && parsed.storageDir) return parsed.storageDir
+  } catch {
+    /* 无指针文件则尝试旧位置 */
+  }
+  // 2) 兼容旧位置：settings.json 内嵌字段（仅供手工配置过的用户）
   for (const file of [path.join(defaultRoot(), 'data/settings.json'), path.join(app.getPath('userData'), 'data/settings.json')]) {
     try {
       const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { storageDir?: string }
@@ -40,6 +57,17 @@ function readStorageDirSetting(): string {
     }
   }
   return ''
+}
+
+/** 写入自定义存储目录指针（迁移流程调用；dir 传空则删除指针恢复默认） */
+export function setStorageDirPointer(dir: string): void {
+  const file = path.join(app.getPath('userData'), STORAGE_DIR_POINTER)
+  if (!dir) {
+    fs.rmSync(file, { force: true })
+    return
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ storageDir: dir }, null, 2), 'utf-8')
 }
 
 /**
@@ -137,9 +165,22 @@ export const previewDir = (): string => sub('previews')
 export const appliedDir = (): string => sub('applied')
 export const binDir = (): string => sub('bin')
 
+/**
+ * 路径指向真实存在的文件（非目录）。
+ * 所有"本地文件是否可用"的判断必须用它：仅 existsSync 会被目录路径骗过
+ * （曾导致自愈把云端记录的空 path 回写成媒体库目录本身，标记成假本地态）。
+ */
+export function isRealFile(p: string): boolean {
+  if (!p) return false
+  try {
+    return fs.statSync(p).isFile()
+  } catch {
+    return false
+  }
+}
+
 /** 递归统计目录占用（字节） */
-export async function dirSize(dir: string): Promise<number> {
-  let total = 0
+export async function dirSize(dir: string): Promise<number> {  let total = 0
   const walk = async (d: string): Promise<void> => {
     let entries: fs.Dirent[]
     try {

@@ -26,7 +26,7 @@ import { applyWallpaper, listMonitors } from './services/wallpaper'
 import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './services/slideshow'
 import { clearHistory, listHistory, recordApply } from './services/history'
 import { flushSettings, getSettings, updateSettings } from './services/settings'
-import { customStorageDirMissing, dirSize, hasCustomStorageDir, storageRoot } from './services/paths'
+import { customStorageDirMissing, dirSize, hasCustomStorageDir, setStorageDirPointer, storageRoot } from './services/paths'
 import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
 import { downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
@@ -88,7 +88,7 @@ export function registerIpcHandlers(): void {
 
   /**
    * 更换存储目录：弹目录选择框 → 整体复制全部数据到新位置 →
-   * 在新位置写入 storageDir 标记 → 通知渲染层 → 延迟自动重启生效。
+   * 写入自定义目录指针（userData 根下）+ 新位置自描述标记 → 通知渲染层 → 延迟自动重启生效。
    * （复制而非移动：迁移中断不会丢数据；重启成功后可手动删除旧目录）
    */
   ipcMain.handle(
@@ -124,7 +124,11 @@ export function registerIpcHandlers(): void {
       // 2) 整体复制（跨卷亦可；大素材库耗时较长，由渲染层展示迁移中状态）
       await fsp.cp(source, target, { recursive: true, force: true })
 
-      // 3) 在新位置的 settings.json 写入 storageDir 标记
+      // 3) 写入自定义目录标记：
+      //    a) userData 根下的指针文件 —— 启动引导的权威来源（旧实现只写新位置
+      //       settings.json，启动时从默认根读取永远读不到，重启后仍用旧目录）
+      //    b) 新位置 settings.json 的 storageDir 字段 —— 自描述，便于排查
+      setStorageDirPointer(target)
       const settingsFile = path.join(target, 'data', 'settings.json')
       const data = JSON.parse(await fsp.readFile(settingsFile, 'utf-8')) as Record<string, unknown>
       data.storageDir = target

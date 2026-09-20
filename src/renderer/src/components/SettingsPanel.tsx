@@ -61,6 +61,9 @@ export function SettingsPanel(): JSX.Element {
         setMigrating(false)
         return
       }
+      // 主进程 1.5s 后自动重启；先就地刷新路径显示，避免重启前短暂仍是旧路径
+      const newRoot = result.root
+      if (newRoot) setStorage((s) => (s ? { ...s, root: newRoot, custom: true } : s))
       // 主进程 1.5s 后自动重启；此处仅展示提示
       toast('迁移完成，应用即将自动重启…')
     } catch (err) {
