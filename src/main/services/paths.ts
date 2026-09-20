@@ -44,7 +44,8 @@ function readStorageDirSetting(): string {
 
 /**
  * 旧布局迁移：v1.0 早期版本把目录平铺在 userData 下。
- * 无自定义目录且新根不存在时，把旧目录整体挪进 userData/storage（同卷 rename，瞬时完成）。
+ * 无自定义目录且新根不存在时，把旧目录整体挪进 userData/storage（同卷 rename，瞬时完成），
+ * 并把 library.json 中指向旧 library/ 的绝对路径改写为新位置（避免记录断链被误判为云端）。
  */
 function migrateLegacyLayout(): void {
   const userData = app.getPath('userData')
@@ -60,6 +61,45 @@ function migrateLegacyLayout(): void {
         console.error(`[paths] 迁移旧目录失败: ${name}`, err)
       }
     }
+  }
+  // 记录路径改写：<userData>/library/xxx → <root>/library/xxx
+  rewriteLibraryPaths(path.join(userData, 'library'), path.join(root, 'library'), root)
+}
+
+/**
+ * 改写 data/library.json 中的绝对路径前缀（path / sourcePath）。
+ * 在库文件实际就位的新 root 下操作，先写临时文件再原子替换。
+ */
+function rewriteLibraryPaths(oldPrefix: string, newPrefix: string, root: string): void {
+  const file = path.join(root, 'data', 'library.json')
+  try {
+    if (!fs.existsSync(file)) return
+    const raw = fs.readFileSync(file, 'utf-8')
+    if (!raw.includes(oldPrefix)) return
+  } catch {
+    return
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf-8')) as {
+      images: { path: string; sourcePath: string }[]
+    }
+    let touched = false
+    for (const img of data.images ?? []) {
+      for (const key of ['path', 'sourcePath'] as const) {
+        if (img[key]?.startsWith(oldPrefix + path.sep)) {
+          img[key] = img[key].replace(oldPrefix, newPrefix)
+          touched = true
+        }
+      }
+    }
+    if (touched) {
+      const tmp = `${file}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8')
+      fs.renameSync(tmp, file)
+      console.log('[paths] library.json 记录路径已改写至新存储根目录')
+    }
+  } catch (err) {
+    console.error('[paths] library.json 路径改写失败:', err)
   }
 }
 

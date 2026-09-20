@@ -94,6 +94,44 @@ function backfillSyncFields(): void {
   }
   if (dirty) libraryStore.flush()
 }
+
+/**
+ * 路径自愈：存储目录迁移（v1.0 平铺布局 → storage/ 根目录、或用户更换存储位置）后，
+ * 记录中的绝对路径可能仍指向旧位置——按文件名在当前媒体库目录找回并回写，
+ * 同时修正 localFile 标记，避免"文件明明在本地却被标成云端"。
+ */
+function healLibraryPaths(): void {
+  const data = libraryStore.get()
+  let dirty = false
+  for (const img of data.images) {
+    if (fs.existsSync(img.path)) {
+      if (!img.localFile) {
+        img.localFile = true
+        dirty = true
+      }
+      continue
+    }
+    // 路径失效：尝试当前媒体库目录下的同名文件
+    const candidate = path.join(libraryDir(), path.basename(img.path))
+    if (fs.existsSync(candidate)) {
+      const wasReference = img.path !== img.sourcePath
+      img.path = candidate
+      if (!wasReference || !fs.existsSync(img.sourcePath)) img.sourcePath = candidate
+      img.localFile = true
+      dirty = true
+    } else if (img.localFile) {
+      // 确实找不到本地文件：如实标记为云端
+      img.localFile = false
+      dirty = true
+    }
+  }
+  if (dirty) {
+    libraryStore.flush()
+    console.log(`[library] 路径自愈完成（${data.images.length} 条记录已检查）`)
+  }
+}
+backfillSyncFields()
+healLibraryPaths()
 backfillSyncFields()
 
 export function getLibrary(): LibraryData {
