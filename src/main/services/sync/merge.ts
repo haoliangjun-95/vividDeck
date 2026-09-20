@@ -189,9 +189,47 @@ export function mergeAll(input: MergeInput): MergeOutput {
   }))
 
   // 按 order 排序（缺省排最后），保证各设备分类顺序一致
-  const categories = Array.from(catMap.values()).sort(
+  let categories = Array.from(catMap.values()).sort(
     (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || (a.id < b.id ? -1 : 1)
   )
+
+  // ---------- 5.5) 同名分类去重 ----------
+  // 各设备首次启动都会生成同名预置分类（id 各自随机），按 id 合并必产生同名重复；
+  // 保留 LWW 胜者（全平局取小 id 保证各设备结论一致），图片引用改指保留者，败者写墓碑防复活。
+  {
+    const catByName = new Map<string, Category[]>()
+    for (const c of categories) {
+      const list = catByName.get(c.name) ?? []
+      list.push(c)
+      catByName.set(c.name, list)
+    }
+    const catRemap = new Map<string, string>()
+    for (const [, list] of catByName) {
+      if (list.length < 2) continue
+      const keeper = list
+        .slice()
+        .sort((a, b) => (newer(a, b) ? -1 : newer(b, a) ? 1 : a.id < b.id ? -1 : 1))[0]
+      for (const c of list) {
+        if (c.id === keeper.id) continue
+        catRemap.set(c.id, keeper.id)
+        tombstoneMap.set(c.id, { id: c.id, kind: 'category', deletedAt: now, deletedBy: 'dedup' })
+        stats.deduped++
+      }
+    }
+    if (catRemap.size > 0) {
+      for (const img of images) {
+        if (img.categoryId == null) continue
+        const mapped = catRemap.get(img.categoryId)
+        if (mapped) {
+          img.categoryId = mapped
+          // 打新时间戳让改挂在 LWW 中胜出：否则对端本地记录与改挂版本 updatedAt
+          // 打平、旧 categoryId 胜回，图片会指向已被墓碑的败者分类（孤儿引用）
+          img.updatedAt = now
+        }
+      }
+      categories = categories.filter((c) => !catRemap.has(c.id))
+    }
+  }
 
   // ---------- 6) 是否需要发布新清单 ----------
   // 计算合并后的"远端理想态"：全部 slots 记录 + 分类 + 墓碑
