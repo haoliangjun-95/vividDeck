@@ -71,9 +71,11 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
         e.dataTransfer.setData('application/x-vd-image', image.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
-      onClick={() => {
+      onClick={(e) => {
         if (selectionMode) {
-          toggleSelected(image.id)
+          // 忽略连点的第二次及以后（e.detail>1）：兼容"双击设壁纸"的肌肉记忆，
+          // 双击只算选中一次，不会把刚选中的又取消掉
+          if (e.detail === 1) toggleSelected(image.id)
           return
         }
         openLightbox(image.id)
