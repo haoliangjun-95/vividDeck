@@ -7,7 +7,7 @@
  * 并发模型：每设备写独立快照（manifests/<deviceId>-<ts>.json），合并幂等可交换，
  *          无需条件写；进程内互斥锁防止本设备重入。
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -80,6 +80,15 @@ function isConfigured(): boolean {
   return cfg.endpoint !== '' && cfg.accessKey !== '' && hasSecret()
 }
 
+/**
+ * 开发模式同步保险丝：未打包运行（npm run dev / npx electron .）时禁止同步，
+ * 防止开发实例携带真实凭据误写共享桶（曾因遗留的 dev userData 差点污染真实数据）。
+ * 显式设置 VD_ALLOW_DEV_SYNC=1 可在开发模式下开启（联调同步功能时用）。
+ */
+function devSyncBlocked(): boolean {
+  return !app.isPackaged && process.env.VD_ALLOW_DEV_SYNC !== '1'
+}
+
 function makeClient(): { cfg: SyncConfig; client: import('minio').Client } | null {
   const cfg = getSyncConfig()
   if (!isConfigured()) return null
@@ -115,6 +124,7 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T, index: number
 /** 完整同步（互斥） */
 export async function syncNow(): Promise<SyncResultStats> {
   if (running) throw new Error('同步正在进行中')
+  if (devSyncBlocked()) throw new Error('开发模式下同步已禁用（设置 VD_ALLOW_DEV_SYNC=1 可开启）')
   const made = makeClient()
   if (!made) throw new Error('尚未配置同步（请在设置中填写 MinIO 连接信息）')
   const { cfg, client: mc } = made
@@ -323,6 +333,10 @@ export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloa
 
 /** 引擎初始化：注册变更防抖 + 启动时同步 */
 export function initSyncEngine(): void {
+  if (devSyncBlocked()) {
+    console.log('[sync] 开发模式下同步已禁用（VD_ALLOW_DEV_SYNC=1 可开启）')
+    return
+  }
   onLibraryChanged(() => {
     if (applying || running) return
     const cfg = getSyncConfig()

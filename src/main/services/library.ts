@@ -76,12 +76,16 @@ ensureDefaultCategories()
 function backfillSyncFields(): void {
   const data = libraryStore.get()
   let dirty = false
-  for (const cat of data.categories) {
+  data.categories.forEach((cat, index) => {
     if (cat.updatedAt === undefined) {
       cat.updatedAt = cat.createdAt
       dirty = true
     }
-  }
+    if (cat.order === undefined) {
+      cat.order = index
+      dirty = true
+    }
+  })
   for (const img of data.images) {
     if (img.updatedAt === undefined) {
       img.updatedAt = img.addedAt
@@ -301,6 +305,19 @@ export function updateImage(id: string, patch: Partial<Pick<ImageItem, 'favorite
   })
 }
 
+/** 批量按图设置标签（每张图可不同，支持增/删混合语义；单次事务） */
+export function setTagsMany(entries: { id: string; tags: string[] }[]): LibraryData {
+  const map = new Map(entries.map((e) => [e.id, e.tags]))
+  return commit((data) => {
+    for (const target of data.images) {
+      const tags = map.get(target.id)
+      if (!tags) continue
+      target.tags = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)))
+      stamp(target)
+    }
+  })
+}
+
 /** 批量更新属性（单次事务：一次 commit 一次落盘，时间戳统一） */
 export function updateImages(ids: string[], patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>): LibraryData {
   const idSet = new Set(ids)
@@ -385,6 +402,23 @@ export function renameCategory(id: string, name: string): LibraryData {
       target.name = name.trim()
       target.updatedAt = Date.now()
     }
+  })
+}
+
+/** 拖拽排序：按给定 id 顺序重排并落 order 字段（同步传播；单次事务） */
+export function reorderCategories(idsInOrder: string[]): LibraryData {
+  return commit((data) => {
+    const pos = new Map(idsInOrder.map((id, i) => [id, i]))
+    const reordered = [...data.categories].sort(
+      (a, b) => (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+    )
+    reordered.forEach((cat, index) => {
+      if (cat.order !== index) {
+        cat.order = index
+        cat.updatedAt = Date.now()
+      }
+    })
+    data.categories = reordered
   })
 }
 

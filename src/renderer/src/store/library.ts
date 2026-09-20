@@ -28,8 +28,11 @@ interface LibraryState {
   assignCategoryMany: (ids: string[], categoryId: string | null) => Promise<void>
   /** 批量：删除（废纸篓 + 墓碑同步传播） */
   removeMany: (ids: string[]) => Promise<void>
+  /** 批量：按图设置标签（增/删混合，单次事务） */
+  setTagsMany: (entries: { id: string; tags: string[] }[]) => Promise<void>
   addCategory: (name: string) => Promise<void>
   renameCategory: (id: string, name: string) => Promise<void>
+  reorderCategories: (ids: string[]) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
   setFilter: (patch: Partial<LibraryFilter>) => void
   setSort: (sort: SortKey) => void
@@ -38,7 +41,7 @@ interface LibraryState {
 const DEFAULT_FILTER: LibraryFilter = {
   keyword: '',
   categoryId: 'all',
-  tag: null,
+  tags: [],
   minWidth: 0,
   minSizeMB: 0,
   maxSizeMB: 0
@@ -110,6 +113,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     get().applyData(data)
   },
 
+  setTagsMany: async (entries) => {
+    const data = await window.api.setTagsMany(entries)
+    get().applyData(data)
+  },
+
   addCategory: async (name) => {
     const data = await window.api.addCategory(name)
     get().applyData(data)
@@ -117,6 +125,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   renameCategory: async (id, name) => {
     const data = await window.api.renameCategory(id, name)
+    get().applyData(data)
+  },
+
+  reorderCategories: async (ids) => {
+    const data = await window.api.reorderCategories(ids)
     get().applyData(data)
   },
 
@@ -142,7 +155,8 @@ export function selectFilteredImages(state: LibraryState): ImageItem[] {
     } else if (filter.categoryId !== 'all') {
       if (img.categoryId !== filter.categoryId) return false
     }
-    if (filter.tag && !img.tags.includes(filter.tag)) return false
+    // 多选标签：任一命中即显示
+    if (filter.tags.length > 0 && !filter.tags.some((t) => img.tags.includes(t))) return false
     if (filter.minWidth > 0 && img.width < filter.minWidth) return false
     if (filter.minSizeMB > 0 && img.sizeBytes < filter.minSizeMB * 1024 * 1024) return false
     if (filter.maxSizeMB > 0 && img.sizeBytes > filter.maxSizeMB * 1024 * 1024) return false

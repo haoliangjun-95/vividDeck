@@ -56,9 +56,12 @@ const api = {
   updateImages: (ids: string[], patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>) =>
     call<LibraryData>(IPC.LIBRARY_UPDATE_IMAGES, { ids, patch }),
   deleteImages: (ids: string[]) => call<LibraryData>(IPC.LIBRARY_DELETE_IMAGES, { ids }),
+  setTagsMany: (entries: { id: string; tags: string[] }[]) =>
+    call<LibraryData>(IPC.LIBRARY_SET_TAGS_MANY, { entries }),
   addCategory: (name: string) => call<LibraryData>(IPC.LIBRARY_ADD_CATEGORY, { name }),
   renameCategory: (id: string, name: string) => call<LibraryData>(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
   deleteCategory: (id: string) => call<LibraryData>(IPC.LIBRARY_DELETE_CATEGORY, { id }),
+  reorderCategories: (ids: string[]) => call<LibraryData>(IPC.LIBRARY_REORDER_CATEGORIES, { ids }),
 
   // ---------- 壁纸 ----------
   listMonitors: () => call<MonitorInfo[]>(IPC.WALLPAPER_LIST_MONITORS),

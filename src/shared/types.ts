@@ -45,6 +45,8 @@ export interface Category {
   createdAt: number
   /** 记录最后修改时间（同步 LWW 依据） */
   updatedAt: number
+  /** 显示排序序号（侧栏拖拽排序；经同步传播，缺省排最后） */
+  order?: number
 }
 
 export interface LibraryData {
@@ -219,7 +221,8 @@ export interface ImportResult {
 export interface LibraryFilter {
   keyword: string
   categoryId: string | null | 'all' | 'favorites'
-  tag: string | null
+  /** 多选标签筛选（任一命中即显示） */
+  tags: string[]
   /** 最小宽度（像素），0 为不限 */
   minWidth: number
   /** 文件大小下/上限（MB），0 为不限 */

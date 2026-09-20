@@ -188,7 +188,10 @@ export function mergeAll(input: MergeInput): MergeOutput {
     localFile: slot.local?.localFile ?? false
   }))
 
-  const categories = Array.from(catMap.values())
+  // 按 order 排序（缺省排最后），保证各设备分类顺序一致
+  const categories = Array.from(catMap.values()).sort(
+    (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || (a.id < b.id ? -1 : 1)
+  )
 
   // ---------- 6) 是否需要发布新清单 ----------
   // 计算合并后的"远端理想态"：全部 slots 记录 + 分类 + 墓碑

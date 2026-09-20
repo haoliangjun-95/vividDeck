@@ -22,9 +22,11 @@ export const IPC = {
   LIBRARY_UPDATE_IMAGE: 'library:updateImage', // { id, patch } -> LibraryData
   LIBRARY_UPDATE_IMAGES: 'library:updateImages', // { ids, patch } -> LibraryData（批量）
   LIBRARY_DELETE_IMAGES: 'library:deleteImages', // { ids } -> LibraryData（批量，含墓碑）
+  LIBRARY_SET_TAGS_MANY: 'library:setTagsMany', // { entries: {id, tags}[] } -> LibraryData（批量按图标签）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData
+  LIBRARY_REORDER_CATEGORIES: 'library:reorderCategories', // { ids } -> LibraryData（拖拽排序）
 
   // 壁纸
   WALLPAPER_LIST_MONITORS: 'wallpaper:listMonitors', // -> MonitorInfo[]

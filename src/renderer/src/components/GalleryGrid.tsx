@@ -3,7 +3,7 @@
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, CheckSquare, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Trash2, X } from 'lucide-react'
+import { Check, CheckSquare, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
@@ -173,7 +173,8 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
   )
 }
 
-/** 图片右键菜单（设为壁纸 / 收藏 / 裁剪 / 重命名 / 删除 / 归类） */
+/** 图片右键菜单（设为壁纸 / 收藏 / 裁剪 / 重命名 / 删除 / 归类 / 标签）
+ *  批量选择模式下右键"已选中"的图片时，分类 / 标签 / 删除 / 收藏对整个选中集生效 */
 function CardContextMenu({
   image,
   x,
@@ -189,17 +190,68 @@ function CardContextMenu({
 }) {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const assignCategory = useLibraryStore((s) => s.assignCategory)
+  const assignCategoryMany = useLibraryStore((s) => s.assignCategoryMany)
   const remove = useLibraryStore((s) => s.remove)
+  const removeMany = useLibraryStore((s) => s.removeMany)
+  const setTags = useLibraryStore((s) => s.setTags)
+  const setTagsMany = useLibraryStore((s) => s.setTagsMany)
+  const images = useLibraryStore((s) => s.images)
   const categories = useLibraryStore((s) => s.categories)
+  const allTags = useLibraryStore((s) => s.tags)
   const openWallpaperDialog = useUIStore((s) => s.openWallpaperDialog)
   const openCrop = useUIStore((s) => s.openCrop)
   const openLightbox = useUIStore((s) => s.openLightbox)
   const toast = useUIStore((s) => s.toast)
+  const selectionMode = useUIStore((s) => s.selectionMode)
+  const selectedIds = useUIStore((s) => s.selectedIds)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [newTag, setNewTag] = useState('')
+
+  // 右键的图片在选中集合内 → 分类/标签/删除/收藏批量作用于全部选中
+  const batchIds =
+    selectionMode && selectedIds.includes(image.id) && selectedIds.length > 0 ? [...selectedIds] : null
+  const N = batchIds?.length ?? 1
+
+  /** 切换标签：单张直接换；批量时以被右键图片的状态为准，对选中集统一加/删 */
+  const toggleTag = (tag: string): void => {
+    const has = image.tags.includes(tag)
+    if (batchIds) {
+      const entries = batchIds
+        .map((id) => images.find((i) => i.id === id))
+        .filter((i): i is ImageItem => Boolean(i))
+        .map((i) => ({
+          id: i.id,
+          tags: has ? i.tags.filter((t) => t !== tag) : Array.from(new Set([...i.tags, tag]))
+        }))
+      void setTagsMany(entries)
+      toast(`已${has ? '移除' : '添加'}标签「${tag}」（${N} 张）`, 'info')
+    } else {
+      void setTags(image.id, has ? image.tags.filter((t) => t !== tag) : [...image.tags, tag])
+      toast(`已${has ? '移除' : '添加'}标签「${tag}」`, 'info')
+    }
+    onClose()
+  }
+
+  const addNewTag = (): void => {
+    const name = newTag.trim()
+    if (!name) return
+    if (batchIds) {
+      const entries = batchIds
+        .map((id) => images.find((i) => i.id === id))
+        .filter((i): i is ImageItem => Boolean(i))
+        .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, name])) }))
+      void setTagsMany(entries)
+      toast(`已添加标签「${name}」（${N} 张）`)
+    } else {
+      void setTags(image.id, Array.from(new Set([...image.tags, name])))
+      toast(`已添加标签「${name}」`)
+    }
+    onClose()
+  }
 
   // 菜单尺寸估计，避免贴边溢出屏幕
   const W = 208
-  const H = 330
+  const H = 430
   const left = Math.min(x, window.innerWidth - W - 8)
   const top = Math.min(y, window.innerHeight - H - 8)
 
@@ -226,12 +278,20 @@ function CardContextMenu({
         <button
           className={item}
           onClick={() => {
-            void toggleFavorite(image.id)
+            if (batchIds) {
+              void window.api.updateImages(batchIds, { favorite: !image.favorite }).then((data) => {
+                useLibraryStore.getState().applyData(data)
+              })
+              toast(`已${image.favorite ? '取消收藏' : '收藏'} ${N} 张`, 'info')
+            } else {
+              void toggleFavorite(image.id)
+            }
             onClose()
           }}
         >
           <Heart size={15} fill={image.favorite ? 'currentColor' : 'none'} />
           {image.favorite ? '取消收藏' : '收藏'}
+          {batchIds ? `（${N} 张）` : ''}
         </button>
         <button
           className={item}
@@ -270,20 +330,27 @@ function CardContextMenu({
               setConfirmDelete(true)
               return
             }
-            void remove(image.id)
-            toast('已删除', 'info')
+            if (batchIds) {
+              void removeMany(batchIds).then(() => {
+                toast(`已删除 ${N} 张`, 'info')
+              })
+            } else {
+              void remove(image.id)
+              toast('已删除', 'info')
+            }
             onClose()
           }}
         >
           <Trash2 size={15} />
-          {confirmDelete ? '再点一次确认删除' : '删除'}
+          {confirmDelete ? `再点一次确认删除${batchIds ? `（${N} 张）` : ''}` : `删除${batchIds ? `已选 ${N} 张` : ''}`}
         </button>
 
-        {/* 归类快捷区 */}
+        {/* 归类快捷区（批量选择时作用于全部选中） */}
         <div className="mt-1 border-t border-neutral-200 px-2 pb-2 pt-1.5 dark:border-neutral-800">
           <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
             <FolderInput size={12} />
             移动到分类
+            {batchIds && <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">已选 {N} 张</span>}
           </div>
           <div className="max-h-36 overflow-y-auto pr-0.5">
             {categories.map((cat) => (
@@ -291,8 +358,14 @@ function CardContextMenu({
                 key={cat.id}
                 className={`${item} !py-1 !text-xs ${image.categoryId === cat.id ? '!text-indigo-600 dark:!text-indigo-400' : ''}`}
                 onClick={() => {
-                  void assignCategory(image.id, cat.id)
-                  toast(`已移入「${cat.name}」`, 'info')
+                  if (batchIds) {
+                    void assignCategoryMany(batchIds, cat.id).then(() => {
+                      toast(`已将 ${N} 张移入「${cat.name}」`)
+                    })
+                  } else {
+                    void assignCategory(image.id, cat.id)
+                    toast(`已移入「${cat.name}」`, 'info')
+                  }
                   onClose()
                 }}
               >
@@ -303,12 +376,62 @@ function CardContextMenu({
             <button
               className={`${item} !py-1 !text-xs`}
               onClick={() => {
-                void assignCategory(image.id, null)
-                toast('已移出分类', 'info')
+                if (batchIds) {
+                  void assignCategoryMany(batchIds, null).then(() => {
+                    toast(`已将 ${N} 张移出分类`, 'info')
+                  })
+                } else {
+                  void assignCategory(image.id, null)
+                  toast('已移出分类', 'info')
+                }
                 onClose()
               }}
             >
               未分类
+            </button>
+          </div>
+        </div>
+
+        {/* 标签快捷区（点击切换加/删；批量时作用于全部选中） */}
+        <div className="mt-1 border-t border-neutral-200 px-2 pb-2 pt-1.5 dark:border-neutral-800">
+          <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+            <TagIcon size={12} />
+            标签
+            {batchIds && <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">已选 {N} 张</span>}
+          </div>
+          <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto px-1 pb-1.5">
+            {allTags.map((tag) => {
+              const has = image.tags.includes(tag)
+              return (
+                <button
+                  key={tag}
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] transition-colors ${
+                    has
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-neutral-100 text-neutral-500 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-neutral-800 dark:text-neutral-400'
+                  }`}
+                  title={has ? '点击移除该标签' : '点击添加该标签'}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {has ? '✓ ' : '+ '}
+                  {tag}
+                </button>
+              )
+            })}
+            {allTags.length === 0 && <span className="px-1 text-[11px] text-neutral-400">暂无标签</span>}
+          </div>
+          <div className="flex gap-1 px-1">
+            <input
+              className="field flex-1 !px-2 !py-1 text-[11px]"
+              placeholder="新标签，回车添加"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addNewTag()
+              }}
+            />
+            <button className="btn-ghost !px-2 !py-1 text-[11px]" onClick={addNewTag} disabled={!newTag.trim()}>
+              添加
             </button>
           </div>
         </div>
@@ -360,7 +483,7 @@ function RenameModal({ image, onClose }: { image: ImageItem; onClose: () => void
 }
 
 /** 批量操作栏（选择模式下有选中时显示） */
-function BatchActionBar({ onCloseCategoryPicker }: { onCloseCategoryPicker: () => void }) {
+function BatchActionBar({ onOpenCategoryPicker, onOpenTagPicker }: { onOpenCategoryPicker: () => void; onOpenTagPicker: () => void }) {
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectedIds = useUIStore((s) => s.setSelectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
@@ -388,12 +511,22 @@ function BatchActionBar({ onCloseCategoryPicker }: { onCloseCategoryPicker: () =
       <button
         className="btn-ghost !py-1 text-xs"
         onClick={() => {
-          onCloseCategoryPicker()
+          onOpenCategoryPicker()
           setConfirmDelete(false)
         }}
       >
         <FolderInput size={13} />
         设置分类…
+      </button>
+      <button
+        className="btn-ghost !py-1 text-xs"
+        onClick={() => {
+          onOpenTagPicker()
+          setConfirmDelete(false)
+        }}
+      >
+        <TagIcon size={13} />
+        加标签…
       </button>
       <button
         className={`btn !py-1 text-xs ${confirmDelete ? '!bg-red-600 !text-white hover:!bg-red-500' : 'btn-danger'}`}
@@ -423,6 +556,79 @@ function BatchActionBar({ onCloseCategoryPicker }: { onCloseCategoryPicker: () =
         完成
       </button>
     </div>
+  )
+}
+
+/** 批量加标签弹窗（勾选已有标签 / 输入新标签，一次合并添加到全部选中） */
+function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void }) {
+  const images = useLibraryStore((s) => s.images)
+  const allTags = useLibraryStore((s) => s.tags)
+  const setTagsMany = useLibraryStore((s) => s.setTagsMany)
+  const toast = useUIStore((s) => s.toast)
+  const [picked, setPicked] = useState<string[]>([])
+  const [newTags, setNewTags] = useState('')
+
+  const apply = (): void => {
+    const additions = Array.from(new Set([...picked, ...newTags.split(/[,，\s]+/).map((t) => t.trim()).filter(Boolean)]))
+    if (additions.length === 0) return
+    const entries = ids
+      .map((id) => images.find((i) => i.id === id))
+      .filter((i): i is ImageItem => Boolean(i))
+      .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, ...additions])) }))
+    void setTagsMany(entries).then(() => {
+      toast(`已为 ${ids.length} 张添加 ${additions.length} 个标签`)
+      onClose()
+    })
+  }
+
+  return (
+    <Modal title={`批量加标签（${ids.length} 张）`} onClose={onClose} width="max-w-md">
+      <div className="space-y-3">
+        {allTags.length > 0 && (
+          <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
+            {allTags.map((tag) => {
+              const active = picked.includes(tag)
+              return (
+                <button
+                  key={tag}
+                  className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
+                    active
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-neutral-800 dark:text-neutral-300'
+                  }`}
+                  onClick={() => setPicked(active ? picked.filter((t) => t !== tag) : [...picked, tag])}
+                >
+                  {active ? '✓ ' : '+ '}
+                  {tag}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <input
+          className="field w-full"
+          placeholder="新标签（可用逗号/空格分隔多个）"
+          value={newTags}
+          onChange={(e) => setNewTags(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') apply()
+          }}
+        />
+        <div className="flex justify-end gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <button className="btn-ghost" onClick={onClose}>
+            取消
+          </button>
+          <button
+            className="btn-primary"
+            disabled={picked.length === 0 && newTags.trim() === ''}
+            onClick={apply}
+          >
+            添加到 {ids.length} 张
+          </button>
+        </div>
+        <p className="text-xs text-neutral-400">批量添加为「并入」：选中图片已有的标签保留不覆盖。</p>
+      </div>
+    </Modal>
   )
 }
 
@@ -486,6 +692,7 @@ export function GalleryGrid(): JSX.Element {
   const [menu, setMenu] = useState<{ x: number; y: number; image: ImageItem } | null>(null)
   const [renaming, setRenaming] = useState<ImageItem | null>(null)
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
 
   // 筛选条件变化时重置分页
   useEffect(() => setVisible(PAGE_SIZE), [images])
@@ -493,11 +700,11 @@ export function GalleryGrid(): JSX.Element {
   // Esc 退出批量选择（无弹窗时）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && selectionMode && !categoryPickerOpen) setSelectionMode(false)
+      if (e.key === 'Escape' && selectionMode && !categoryPickerOpen && !tagPickerOpen) setSelectionMode(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectionMode, categoryPickerOpen, setSelectionMode])
+  }, [selectionMode, categoryPickerOpen, tagPickerOpen, setSelectionMode])
 
   // 滚动触底加载更多（懒分页，数千张不卡顿）
   useEffect(() => {
@@ -548,9 +755,15 @@ export function GalleryGrid(): JSX.Element {
       {renaming && <RenameModal image={renaming} onClose={() => setRenaming(null)} />}
 
       {/* 批量操作栏与分类选择弹窗 */}
-      <BatchActionBar onCloseCategoryPicker={() => setCategoryPickerOpen(true)} />
+      <BatchActionBar
+        onOpenCategoryPicker={() => setCategoryPickerOpen(true)}
+        onOpenTagPicker={() => setTagPickerOpen(true)}
+      />
       {categoryPickerOpen && selectedIds.length > 0 && (
         <BatchCategoryModal ids={[...selectedIds]} onClose={() => setCategoryPickerOpen(false)} />
+      )}
+      {tagPickerOpen && selectedIds.length > 0 && (
+        <BatchTagModal ids={[...selectedIds]} onClose={() => setTagPickerOpen(false)} />
       )}
     </div>
   )

@@ -13,36 +13,69 @@ function NavItem({
   count,
   onClick,
   onDrop,
-  dropLabel
+  dropLabel,
+  rowDraggable,
+  onRowDragStart,
+  reorderHover,
+  onRowDragOver,
+  onRowDragLeave,
+  onRowDrop
 }: {
   active: boolean
   icon: React.ReactNode
   label: string
   count?: number
   onClick: () => void
-  /** 作为拖拽归类目标 */
+  /** 作为拖拽归类目标（图片拖入） */
   onDrop?: (imageId: string) => void
   dropLabel?: string
+  /** 行本身可拖拽（分类排序） */
+  rowDraggable?: boolean
+  onRowDragStart?: (e: React.DragEvent) => void
+  /** 拖入另一分类时的插入指示 */
+  reorderHover?: boolean
+  onRowDragOver?: (e: React.DragEvent) => void
+  onRowDragLeave?: (e: React.DragEvent) => void
+  onRowDrop?: (e: React.DragEvent) => void
 }) {
   const [dragOver, setDragOver] = React.useState(false)
   return (
     <button
       className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
-        dragOver
-          ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-400 dark:bg-indigo-950 dark:text-indigo-300'
-          : active
-            ? 'bg-neutral-200/80 font-medium dark:bg-neutral-700/70'
-            : 'text-neutral-600 hover:bg-neutral-200/50 dark:text-neutral-300 dark:hover:bg-neutral-700/40'
-      }`}
+        reorderHover
+          ? 'border-t-2 border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+          : dragOver
+            ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-400 dark:bg-indigo-950 dark:text-indigo-300'
+            : active
+              ? 'bg-neutral-200/80 font-medium dark:bg-neutral-700/70'
+              : 'text-neutral-600 hover:bg-neutral-200/50 dark:text-neutral-300 dark:hover:bg-neutral-700/40'
+      } ${rowDraggable ? 'cursor-grab' : ''}`}
       onClick={onClick}
+      draggable={rowDraggable}
+      onDragStart={onRowDragStart}
       onDragOver={(e) => {
-        if (!onDrop) return
+        // 分类拖拽（排序）：交给上层处理
+        if (onRowDragOver && e.dataTransfer.types.includes('application/x-vd-category')) {
+          onRowDragOver(e)
+          return
+        }
+        // 图片拖拽（归类）
+        if (!onDrop || !e.dataTransfer.types.includes('application/x-vd-image')) return
         e.preventDefault()
         setDragOver(true)
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={(e) => {
+        setDragOver(false)
+        onRowDragLeave?.(e)
+      }}
       onDrop={(e) => {
         setDragOver(false)
+        // 分类拖拽（排序）
+        if (onRowDrop && e.dataTransfer.types.includes('application/x-vd-category')) {
+          onRowDrop(e)
+          return
+        }
+        // 图片拖拽（归类）
         if (!onDrop) return
         e.preventDefault()
         const imageId = e.dataTransfer.getData('application/x-vd-image')
@@ -64,9 +97,42 @@ export function Sidebar(): JSX.Element {
   const filter = useLibraryStore((s) => s.filter)
   const setFilter = useLibraryStore((s) => s.setFilter)
   const assignCategory = useLibraryStore((s) => s.assignCategory)
+  const reorderCategories = useLibraryStore((s) => s.reorderCategories)
   const drawer = useUIStore((s) => s.drawer)
   const openDrawer = useUIStore((s) => s.openDrawer)
   const setCategoryManagerOpen = useUIStore((s) => s.setCategoryManagerOpen)
+
+  // 分类拖拽排序状态
+  const [dragCatId, setDragCatId] = React.useState<string | null>(null)
+  const [reorderHoverId, setReorderHoverId] = React.useState<string | null>(null)
+
+  /** 把拖动的分类移动到目标分类之前（target 为 null = 移到末尾） */
+  const moveCategory = (targetId: string | null): void => {
+    if (!dragCatId) return
+    const ids = categories.map((c) => c.id)
+    const from = ids.indexOf(dragCatId)
+    if (from === -1) return
+    ids.splice(from, 1)
+    if (targetId === null) {
+      ids.push(dragCatId)
+    } else {
+      const to = ids.indexOf(targetId)
+      if (to === -1) return
+      ids.splice(to, 0, dragCatId)
+    }
+    void reorderCategories(ids)
+  }
+
+  const rowDragStart = (id: string) => (e: React.DragEvent): void => {
+    e.dataTransfer.setData('application/x-vd-category', id)
+    e.dataTransfer.effectAllowed = 'move'
+    setDragCatId(id)
+  }
+  const rowDragOver = (id: string | null) => (e: React.DragEvent): void => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setReorderHoverId(id)
+  }
 
   const countOf = (categoryId: string | null | 'favorites' | 'all' | 'uncategorized'): number =>
     images.filter((img) => {
@@ -92,23 +158,28 @@ export function Sidebar(): JSX.Element {
         {/* 视图 */}
         <section>
           <NavItem
-            active={filter.categoryId === 'all' && !filter.tag}
+            active={filter.categoryId === 'all' && filter.tags.length === 0}
             icon={<Images size={16} />}
             label="全部图片"
             count={countOf('all')}
-            onClick={() => setFilter({ categoryId: 'all', tag: null })}
+            onClick={() => setFilter({ categoryId: 'all', tags: [] })}
           />
           <NavItem
             active={filter.categoryId === 'favorites'}
             icon={<Heart size={16} />}
             label="收藏"
             count={countOf('favorites')}
-            onClick={() => setFilter({ categoryId: 'favorites', tag: null })}
+            onClick={() => setFilter({ categoryId: 'favorites', tags: [] })}
           />
         </section>
 
-        {/* 分类（拖拽图片到分类即可归类） */}
-        <section>
+        {/* 分类（拖拽图片到分类即可归类；拖动分类行可排序） */}
+        <section
+          onDragEnd={() => {
+            setDragCatId(null)
+            setReorderHoverId(null)
+          }}
+        >
           <div className="mb-1 flex items-center justify-between px-2.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">分类</span>
             <button
@@ -122,13 +193,24 @@ export function Sidebar(): JSX.Element {
           {categories.map((cat) => (
             <NavItem
               key={cat.id}
-              active={filter.categoryId === cat.id && !filter.tag}
+              active={filter.categoryId === cat.id && filter.tags.length === 0}
               icon={<FolderOpen size={16} />}
               label={cat.name}
               count={countOf(cat.id)}
-              onClick={() => setFilter({ categoryId: cat.id, tag: null })}
+              onClick={() => setFilter({ categoryId: cat.id, tags: [] })}
               onDrop={(imageId) => void assignCategory(imageId, cat.id)}
               dropLabel={`移入「${cat.name}」`}
+              rowDraggable
+              onRowDragStart={rowDragStart(cat.id)}
+              reorderHover={reorderHoverId === cat.id && dragCatId !== cat.id}
+              onRowDragOver={rowDragOver(cat.id)}
+              onRowDragLeave={() => setReorderHoverId((v) => (v === cat.id ? null : v))}
+              onRowDrop={(e) => {
+                e.preventDefault()
+                moveCategory(cat.id)
+                setDragCatId(null)
+                setReorderHoverId(null)
+              }}
             />
           ))}
           <NavItem
@@ -136,33 +218,57 @@ export function Sidebar(): JSX.Element {
             icon={<FolderOpen size={16} />}
             label="未分类"
             count={countOf('uncategorized')}
-            onClick={() => setFilter({ categoryId: 'uncategorized', tag: null })}
+            onClick={() => setFilter({ categoryId: 'uncategorized', tags: [] })}
+            reorderHover={reorderHoverId === '__end__' && dragCatId !== null}
+            onRowDragOver={rowDragOver('__end__')}
+            onRowDragLeave={() => setReorderHoverId((v) => (v === '__end__' ? null : v))}
+            onRowDrop={(e) => {
+              e.preventDefault()
+              moveCategory(null)
+              setDragCatId(null)
+              setReorderHoverId(null)
+            }}
             onDrop={(imageId) => void assignCategory(imageId, null)}
             dropLabel="移出分类"
           />
         </section>
 
-        {/* 标签 */}
+        {/* 标签（多选筛选，任一命中即显示） */}
         {tags.length > 0 && (
           <section>
-            <div className="mb-1.5 px-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-              标签
+            <div className="mb-1.5 flex items-center justify-between px-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">标签</span>
+              {filter.tags.length > 0 && (
+                <button
+                  className="rounded-full bg-indigo-100 px-1.5 text-[10px] text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-950 dark:text-indigo-300"
+                  onClick={() => setFilter({ tags: [] })}
+                  title="清除标签筛选"
+                >
+                  已选 {filter.tags.length} · 清除
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-1.5 px-2">
-              {tags.map((tag) => (
-                <button
-                  key={tag}
-                  className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
-                    filter.tag === tag
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-neutral-200/80 text-neutral-600 hover:bg-neutral-300/80 dark:bg-neutral-700/60 dark:text-neutral-300'
-                  }`}
-                  onClick={() => setFilter({ tag: filter.tag === tag ? null : tag })}
-                >
-                  <Tag size={10} className="mr-0.5 inline align-baseline" />
-                  {tag}
-                </button>
-              ))}
+              {tags.map((tag) => {
+                const active = filter.tags.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
+                      active
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-neutral-200/80 text-neutral-600 hover:bg-neutral-300/80 dark:bg-neutral-700/60 dark:text-neutral-300'
+                    }`}
+                    onClick={() =>
+                      setFilter({ tags: active ? filter.tags.filter((t) => t !== tag) : [...filter.tags, tag] })
+                    }
+                    title={active ? '点击取消该标签筛选' : '点击加入筛选（可多选，任一命中即显示）'}
+                  >
+                    <Tag size={10} className="mr-0.5 inline align-baseline" />
+                    {tag}
+                  </button>
+                )
+              })}
             </div>
           </section>
         )}

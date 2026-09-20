@@ -17,6 +17,8 @@ import {
   importPaths,
   renameCategory,
   renameImage,
+  reorderCategories,
+  setTagsMany,
   updateImage,
   updateImages
 } from './services/library'
@@ -197,9 +199,17 @@ export function registerIpcHandlers(): void {
     IPC.LIBRARY_DELETE_IMAGES,
     wrap((payload: { ids: string[] }) => deleteImages(payload.ids))
   )
+  ipcMain.handle(
+    IPC.LIBRARY_SET_TAGS_MANY,
+    wrap((payload: { entries: { id: string; tags: string[] }[] }) => setTagsMany(payload.entries))
+  )
   ipcMain.handle(IPC.LIBRARY_ADD_CATEGORY, wrap((payload: { name: string }) => addCategory(payload.name)))
   ipcMain.handle(IPC.LIBRARY_RENAME_CATEGORY, wrap((payload: { id: string; name: string }) => renameCategory(payload.id, payload.name)))
   ipcMain.handle(IPC.LIBRARY_DELETE_CATEGORY, wrap((payload: { id: string }) => deleteCategory(payload.id)))
+  ipcMain.handle(
+    IPC.LIBRARY_REORDER_CATEGORIES,
+    wrap((payload: { ids: string[] }) => reorderCategories(payload.ids))
+  )
 
   // ---------- 壁纸 ----------
   ipcMain.handle(IPC.WALLPAPER_LIST_MONITORS, wrap(() => listMonitors()))
