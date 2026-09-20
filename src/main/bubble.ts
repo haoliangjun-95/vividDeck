@@ -92,17 +92,16 @@ function createBubbleWindow(): void {
     x: pos.x,
     y: pos.y,
     frame: false,
+    // 透明窗口（macOS）：必须 resizable:false；不要设置 backgroundColor，
+    // 显式设置（含 8 位透明 hex）在部分版本会导致窗口底色变为不透明白
     transparent: true,
     resizable: false,
-    movable: false, // 拖动由渲染层位移 + setPosition 实现（避免与点击冲突）
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
     skipTaskbar: true,
     show: false,
-    focusable: false, // 点击不抢焦点
     hasShadow: false,
-    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
@@ -116,10 +115,13 @@ function createBubbleWindow(): void {
   if (process.platform === 'darwin') {
     // 跨空间常驻（全屏空间不显示，避免遮挡演示等场景）
     bubbleWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+    // macOS 怪癖：透明无边框窗口在工作区切换等事件后可能重新挂上系统阴影（方形暗边）
+    bubbleWindow.setHasShadow(false)
   }
 
   bubbleWindow.on('ready-to-show', () => {
-    if (getSettings().bubbleEnabled) bubbleWindow?.show()
+    // showInactive：显示但不激活，不抢占当前应用焦点
+    if (getSettings().bubbleEnabled) bubbleWindow?.showInactive()
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -147,6 +149,8 @@ export function initBubble(onStateChange: () => void): void {
     const clamped = clampToScreen(x, y)
     if (clamped.x !== x || clamped.y !== y) bubbleWindow.setPosition(clamped.x, clamped.y, false)
     savePosition(clamped.x, clamped.y)
+    // 显示模式变化同样可能触发 macOS 阴影回归
+    if (process.platform === 'darwin') bubbleWindow.setHasShadow(false)
   })
   screen.on('display-removed', () => {
     if (!bubbleWindow || bubbleWindow.isDestroyed()) return
