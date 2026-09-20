@@ -12,6 +12,7 @@ import { CategoryManager } from './components/CategoryManager'
 import { SlideshowPanel } from './components/SlideshowPanel'
 import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
+import { CloudDownloadBanner } from './components/CloudDownloadBanner'
 import { Drawer, ToastHost } from './components/ui'
 import { useLibraryStore } from './store/library'
 import { useUIStore } from './store/ui'
@@ -95,6 +96,7 @@ export default function App(): JSX.Element {
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col">
         <Toolbar />
+        <CloudDownloadBanner />
         {loaded ? (
           <GalleryGrid />
         ) : (

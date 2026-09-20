@@ -19,7 +19,7 @@ const assert = (cond, label) => {
 
 async function cdp(port) {
   const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json()
-  const page = targets.find((t) => t.type === 'page')
+  const page = targets.find((t) => t.type === 'page' && t.url.endsWith('index.html')) // 主窗口（排除悬浮球 bubble.html）
   if (!page) throw new Error(`端口 ${port} 无页面 target`)
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })

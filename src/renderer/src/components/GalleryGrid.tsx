@@ -3,7 +3,7 @@
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, CheckSquare, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
+import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
@@ -684,6 +684,7 @@ export function GalleryGrid(): JSX.Element {
   const loaded = useLibraryStore((s) => s.loaded)
   const importPaths = useLibraryStore((s) => s.importFiles)
   const toast = useUIStore((s) => s.toast)
+  const openDrawer = useUIStore((s) => s.openDrawer)
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
@@ -738,6 +739,13 @@ export function GalleryGrid(): JSX.Element {
       >
         <div className="text-5xl">🖼️</div>
         <div className="text-sm">还没有图片，点击上方「导入图片」或把图片/文件夹拖到这里</div>
+        <button
+          className="btn-ghost mt-1 gap-1.5 border border-neutral-300 text-xs dark:border-neutral-700"
+          onClick={() => openDrawer('settings')}
+        >
+          <CloudDownload size={14} />
+          已有云端壁纸库？去「设置 → 多设备同步」拉取到本地
+        </button>
       </div>
     )
   }

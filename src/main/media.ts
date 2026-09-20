@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getLibrary } from './services/library'
+import { isRealFile } from './services/paths'
 import { ensurePreview, ensureThumb, previewPath, thumbPath } from './services/thumbnails'
 import { ensureLocal } from './services/sync/engine'
 import { getSyncConfig, hasSecret } from './services/sync/store'
@@ -39,15 +40,24 @@ export async function resolveMediaPath(kind: 'thumb' | 'preview' | 'original', i
       return (await ensureThumb(image)) || local
     }
     if (kind === 'preview') {
-      // 预览依赖本地原图：云端图先触发按需下载
-      if (!image.localFile && syncReady()) await ensureLocal(imageId)
-      const p = previewPath(image)
-      return (await ensurePreview(image)) || p
+      // 预览依赖本地原图：云端图先触发按需下载。
+      // ensureLocal 会回填记录（path/localFile），必须重新取最新记录——
+      // 旧快照的 path 仍为空串，直接用会导致预览生成失败/404。
+      let current = image
+      if (!image.localFile && syncReady()) {
+        await ensureLocal(imageId)
+        current = getLibrary().images.find((img) => img.id === imageId) ?? image
+      }
+      return (await ensurePreview(current)) || previewPath(current)
     }
-    // original：本地无文件时按需下载（灯箱/裁剪/设壁纸共用此路径）
-    if (!image.localFile || !fs.existsSync(image.path)) {
-      if (syncReady()) await ensureLocal(imageId)
-      else return null
+    // original：本地无文件时按需下载（灯箱/裁剪/设壁纸共用此路径）。
+    // 同样要取回填后的最新记录，旧快照的 path 为空串会返回 404。
+    if (!image.localFile || !isRealFile(image.path)) {
+      if (!syncReady()) return null
+      await ensureLocal(imageId)
+      const updated = getLibrary().images.find((img) => img.id === imageId)
+      if (!updated || !isRealFile(updated.path)) return null
+      return updated.path
     }
     return image.path
   } catch (err) {
