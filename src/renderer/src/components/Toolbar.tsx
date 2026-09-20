@@ -2,7 +2,7 @@
  * 工具栏：导入图片/文件夹、关键词搜索、分辨率与文件大小筛选、排序
  */
 import React from 'react'
-import { FilePlus2, FolderPlus, Loader2, Search } from 'lucide-react'
+import { FilePlus2, FolderPlus, ListChecks, Loader2, Search } from 'lucide-react'
 import { useLibraryStore, selectFilteredImages, type SortKey } from '../store/library'
 import { useUIStore } from '../store/ui'
 
@@ -38,6 +38,8 @@ export function Toolbar(): JSX.Element {
   const total = useLibraryStore(selectFilteredImages).length
   const totalCount = useLibraryStore((s) => s.images.length)
   const toast = useUIStore((s) => s.toast)
+  const selectionMode = useUIStore((s) => s.selectionMode)
+  const setSelectionMode = useUIStore((s) => s.setSelectionMode)
 
   const doImport = async (mode: 'files' | 'folder'): Promise<void> => {
     try {
@@ -62,6 +64,16 @@ export function Toolbar(): JSX.Element {
       <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" disabled={importing} onClick={() => void doImport('folder')}>
         <FolderPlus size={15} />
         导入文件夹
+      </button>
+
+      {/* 批量选择开关（选择模式下高亮，Esc 退出） */}
+      <button
+        className={`${selectionMode ? 'btn bg-indigo-600 text-white hover:bg-indigo-500' : 'btn-ghost border border-neutral-300 dark:border-neutral-700'}`}
+        onClick={() => setSelectionMode(!selectionMode)}
+        title={selectionMode ? '退出批量选择（Esc）' : '批量选中后可设置分类 / 删除'}
+      >
+        <ListChecks size={15} />
+        {selectionMode ? '退出选择' : '批量选择'}
       </button>
 
       <div className="relative ml-auto">

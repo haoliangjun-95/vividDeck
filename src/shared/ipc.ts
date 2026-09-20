@@ -20,6 +20,8 @@ export const IPC = {
   LIBRARY_RENAME_IMAGE: 'library:renameImage', // { id, fileName } -> LibraryData
   LIBRARY_DELETE_IMAGE: 'library:deleteImage', // { id } -> LibraryData
   LIBRARY_UPDATE_IMAGE: 'library:updateImage', // { id, patch } -> LibraryData
+  LIBRARY_UPDATE_IMAGES: 'library:updateImages', // { ids, patch } -> LibraryData（批量）
+  LIBRARY_DELETE_IMAGES: 'library:deleteImages', // { ids } -> LibraryData（批量，含墓碑）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData

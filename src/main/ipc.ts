@@ -12,11 +12,13 @@ import {
   cropToNewImage,
   deleteCategory,
   deleteImage,
+  deleteImages,
   getLibrary,
   importPaths,
   renameCategory,
   renameImage,
-  updateImage
+  updateImage,
+  updateImages
 } from './services/library'
 import { applyWallpaper, listMonitors } from './services/wallpaper'
 import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './services/slideshow'
@@ -184,6 +186,16 @@ export function registerIpcHandlers(): void {
     wrap((payload: { id: string; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }) =>
       updateImage(payload.id, payload.patch)
     )
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_UPDATE_IMAGES,
+    wrap((payload: { ids: string[]; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }) =>
+      updateImages(payload.ids, payload.patch)
+    )
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_DELETE_IMAGES,
+    wrap((payload: { ids: string[] }) => deleteImages(payload.ids))
   )
   ipcMain.handle(IPC.LIBRARY_ADD_CATEGORY, wrap((payload: { name: string }) => addCategory(payload.name)))
   ipcMain.handle(IPC.LIBRARY_RENAME_CATEGORY, wrap((payload: { id: string; name: string }) => renameCategory(payload.id, payload.name)))

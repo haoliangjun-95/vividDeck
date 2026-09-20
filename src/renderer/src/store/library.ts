@@ -24,6 +24,10 @@ interface LibraryState {
   setTags: (id: string, tags: string[]) => Promise<void>
   rename: (id: string, fileName: string) => Promise<void>
   remove: (id: string) => Promise<void>
+  /** 批量：设置分类（null = 移出分类） */
+  assignCategoryMany: (ids: string[], categoryId: string | null) => Promise<void>
+  /** 批量：删除（废纸篓 + 墓碑同步传播） */
+  removeMany: (ids: string[]) => Promise<void>
   addCategory: (name: string) => Promise<void>
   renameCategory: (id: string, name: string) => Promise<void>
   deleteCategory: (id: string) => Promise<void>
@@ -93,6 +97,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   remove: async (id) => {
     const data = await window.api.deleteImage(id)
+    get().applyData(data)
+  },
+
+  assignCategoryMany: async (ids, categoryId) => {
+    const data = await window.api.updateImages(ids, { categoryId })
+    get().applyData(data)
+  },
+
+  removeMany: async (ids) => {
+    const data = await window.api.deleteImages(ids)
     get().applyData(data)
   },
 

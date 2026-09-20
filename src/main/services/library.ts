@@ -301,6 +301,36 @@ export function updateImage(id: string, patch: Partial<Pick<ImageItem, 'favorite
   })
 }
 
+/** 批量更新属性（单次事务：一次 commit 一次落盘，时间戳统一） */
+export function updateImages(ids: string[], patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>): LibraryData {
+  const idSet = new Set(ids)
+  return commit((data) => {
+    for (const target of data.images) {
+      if (!idSet.has(target.id)) continue
+      if (patch.favorite !== undefined) target.favorite = patch.favorite
+      if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
+      if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+      stamp(target)
+    }
+  })
+}
+
+/** 批量删除：单次事务移除记录 + 批量写墓碑（同步传播）+ 清理缓存与文件 */
+export async function deleteImages(ids: string[]): Promise<LibraryData> {
+  const idSet = new Set(ids)
+  const targets = getLibrary().images.filter((img) => idSet.has(img.id))
+  for (const image of targets) {
+    if (image.path !== image.sourcePath) {
+      await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
+    }
+    purgeCache(image.id)
+    addTombstone(image.id, 'image')
+  }
+  return commit((data) => {
+    data.images = data.images.filter((img) => !idSet.has(img.id))
+  })
+}
+
 /** 基于原图裁剪并另存为新图片（sharp 在原图上执行，保证画质） */
 export async function cropToNewImage(imageId: string, rect: CropRect, label: string): Promise<ImageItem> {
   const image = getLibrary().images.find((img) => img.id === imageId)
