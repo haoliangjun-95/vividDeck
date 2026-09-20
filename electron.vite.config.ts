@@ -44,7 +44,7 @@ export default defineConfig({
     build: {
       outDir: 'out/renderer',
       rollupOptions: {
-        input: { index: 'src/renderer/index.html' }
+        input: { index: 'src/renderer/index.html', bubble: 'src/renderer/bubble.html' }
       }
     }
   }

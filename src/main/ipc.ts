@@ -25,6 +25,7 @@ import { flushSettings, getSettings, updateSettings } from './services/settings'
 import { customStorageDirMissing, dirSize, hasCustomStorageDir, storageRoot } from './services/paths'
 import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
 import { downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
+import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { flushSlideshow } from './services/slideshow'
@@ -239,6 +240,17 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
   ipcMain.handle(IPC.SLIDESHOW_SET, wrap((patch: Parameters<typeof setSlideshowConfig>[0]) => setSlideshowConfig(patch)))
   ipcMain.handle(IPC.SLIDESHOW_NEXT, wrap(() => nextSlideshowNow()))
+
+  // ---------- 悬浮球 ----------
+  ipcMain.handle(
+    IPC.BUBBLE_SET_ENABLED,
+    wrap((payload: { enabled: boolean }) => {
+      setBubbleEnabled(payload.enabled)
+      return { enabled: payload.enabled }
+    })
+  )
+
+  ipcMain.handle(IPC.BUBBLE_CURRENT, () => ({ imageId: currentWallpaperImageId() }))
 
   // ---------- 历史 ----------
   ipcMain.handle(IPC.HISTORY_LIST, () => listHistory())

@@ -42,6 +42,11 @@ export function SettingsPanel(): JSX.Element {
     if (patch.defaultFillMode !== undefined) {
       setSettings(await window.api.setDefaultFillMode(patch.defaultFillMode))
     }
+    if (patch.bubbleEnabled !== undefined) {
+      await window.api.setBubbleEnabled(patch.bubbleEnabled)
+      // 悬浮球开关由主进程处理后回读最新设置（含托盘菜单联动）
+      void window.api.getState().then((s) => setSettings(s.settings))
+    }
   }
 
   /** 更换存储目录：确认 → 主进程弹目录框并整体迁移 → 自动重启 */
@@ -193,6 +198,33 @@ export function SettingsPanel(): JSX.Element {
             </p>
           </>
         )}
+      </section>
+
+      {/* 桌面悬浮球 */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">桌面悬浮球</span>
+          <button
+            role="switch"
+            aria-checked={settings.bubbleEnabled}
+            className={`relative h-6 w-11 rounded-full transition-colors ${
+              settings.bubbleEnabled ? 'bg-indigo-600' : 'bg-neutral-300 dark:bg-neutral-700'
+            }`}
+            onClick={() => {
+              void update({ bubbleEnabled: !settings.bubbleEnabled })
+            }}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                settings.bubbleEnabled ? 'left-[22px]' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-xs leading-relaxed text-neutral-400">
+          屏幕上的圆形悬浮球，显示当前壁纸缩略图：<b>单击</b>切换下一张（范围跟随轮播计划配置，默认全部图库）；
+          <b>按住拖动</b>调整位置（自动记忆，分辨率变化不会丢）；<b>右键</b>打开菜单（下一张 / 打开主界面 / 隐藏）。
+        </p>
       </section>
 
       {/* MinIO 多设备同步 */}

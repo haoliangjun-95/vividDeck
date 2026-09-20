@@ -17,6 +17,7 @@ import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
 import { flushSyncConfig } from './services/sync/store'
 import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
+import { flushBubble, initBubble, isBubbleVisible, onBubbleOpenMain, setBubbleEnabled } from './bubble'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -104,7 +105,14 @@ function createTray(): void {
   icon.setTemplateImage(true)
   tray = new Tray(icon)
   tray.setToolTip('vividDeck 壁纸管理')
+  rebuildTrayMenu()
+  // macOS 左键点击托盘 = 打开主窗口
+  tray.on('click', () => showMainWindow())
+}
 
+/** 托盘菜单（悬浮球开关状态变化后重建） */
+function rebuildTrayMenu(): void {
+  if (!tray) return
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '打开 vividDeck', click: () => showMainWindow() },
@@ -116,11 +124,14 @@ function createTray(): void {
           void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
       },
       { type: 'separator' },
+      {
+        label: `${isBubbleVisible() ? '隐藏' : '显示'}桌面悬浮球`,
+        click: () => setBubbleEnabled(!isBubbleVisible())
+      },
+      { type: 'separator' },
       { label: '退出', click: () => quitApp() }
     ])
   )
-  // macOS 左键点击托盘 = 打开主窗口
-  tray.on('click', () => showMainWindow())
 }
 
 // ---------- 应用菜单（macOS 必备基础菜单） ----------
@@ -198,6 +209,9 @@ app.whenReady().then(() => {
   createTray()
   initSlideshow()
   initSyncEngine()
+  // 桌面悬浮球（点击切换壁纸）；托盘菜单随其开关状态重建
+  initBubble(rebuildTrayMenu)
+  onBubbleOpenMain(showMainWindow)
 
   app.on('activate', () => {
     // macOS 点击 Dock 图标重新显示窗口
@@ -215,6 +229,7 @@ app.on('before-quit', () => {
   flushSlideshow()
   flushSyncConfig()
   flushSyncEngine()
+  flushBubble()
 })
 
 // 托盘常驻：窗口全部关闭不退出应用（由托盘菜单或 Cmd+Q 退出）

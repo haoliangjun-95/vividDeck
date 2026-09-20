@@ -116,6 +116,8 @@ export interface AppSettings {
    * 全部素材、缓存与 JSON 数据都在该目录下，可整体迁移到其他磁盘。
    */
   storageDir: string
+  /** 桌面悬浮球（点击切换壁纸） */
+  bubbleEnabled: boolean
 }
 
 // ==================== 二期：MinIO 多设备同步 ====================

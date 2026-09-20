@@ -6,7 +6,8 @@ const settingsStore = new JsonStore<AppSettings>('settings', {
   theme: 'system',
   importMode: 'copy',
   defaultFillMode: 'fill',
-  storageDir: ''
+  storageDir: '',
+  bubbleEnabled: true
 })
 
 export function getSettings(): AppSettings {

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' media: data:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>vividDeck 悬浮球</title>
+  </head>
+  <body>
+    <div id="bubble" title="单击切换壁纸 · 拖动移动 · 右键更多">
+      <img id="wallpaper" alt="" draggable="false" />
+      <div id="ring"></div>
+    </div>
+    <script type="module" src="/bubble/main.ts"></script>
+  </body>
+</html>

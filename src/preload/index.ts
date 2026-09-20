@@ -95,6 +95,24 @@ const api = {
   syncDownload: (scope: SyncDownloadScope) => call<{ downloaded: number; failed: number }>(IPC.SYNC_DOWNLOAD, scope),
   syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),
 
+  // ---------- 悬浮球 ----------
+  bubbleMoveBy: (dx: number, dy: number) => {
+    ipcRenderer.send(IPC.BUBBLE_MOVE_BY, Math.round(dx), Math.round(dy))
+  },
+  bubbleContextMenu: () => {
+    ipcRenderer.send(IPC.BUBBLE_CONTEXT_MENU)
+  },
+  setBubbleEnabled: (enabled: boolean) => call<{ enabled: boolean }>(IPC.BUBBLE_SET_ENABLED, { enabled }),
+  getBubbleCurrent: () =>
+    ipcRenderer.invoke(IPC.BUBBLE_CURRENT) as Promise<{ imageId: string | null }>,
+  onBubbleUpdate: (cb: (payload: { imageId: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: { imageId: string }): void => cb(payload)
+    ipcRenderer.on(IPC_EVENTS.BUBBLE_UPDATE, listener)
+    return () => {
+      ipcRenderer.removeListener(IPC_EVENTS.BUBBLE_UPDATE, listener)
+    }
+  },
+
   // ---------- 事件订阅（轮播推送） ----------
   onSlideshowTick: (cb: (payload: { entry: HistoryItem; manual: boolean }) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, payload: { entry: HistoryItem; manual: boolean }): void => cb(payload)

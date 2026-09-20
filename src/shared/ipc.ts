@@ -42,6 +42,12 @@ export const IPC = {
   SYNC_DOWNLOAD: 'sync:download', // SyncDownloadScope -> { downloaded, failed }
   SYNC_ENSURE_LOCAL: 'sync:ensureLocal', // { imageId } -> { path }（按需下载单张）
 
+  // ---------- 悬浮球 ----------
+  BUBBLE_MOVE_BY: 'bubble:moveBy', // (dx, dy) 拖动位移（on 消息，高频）
+  BUBBLE_CONTEXT_MENU: 'bubble:contextMenu', // 弹出右键菜单（on 消息）
+  BUBBLE_SET_ENABLED: 'bubble:setEnabled', // { enabled } -> { enabled }
+  BUBBLE_CURRENT: 'bubble:current', // -> { imageId | null }
+
   // 历史
   HISTORY_LIST: 'history:list', // -> HistoryItem[]
   HISTORY_APPLY: 'history:apply', // { historyId } -> { ok, error? }
@@ -62,5 +68,7 @@ export const IPC_EVENTS = {
   /** 同步结束（成功或失败） */
   SYNC_DONE: 'sync:done',
   /** 同步导致素材库数据变化（渲染层刷新） */
-  LIBRARY_CHANGED: 'library:changed'
+  LIBRARY_CHANGED: 'library:changed',
+  /** 当前壁纸变化（悬浮球刷新缩略图） */
+  BUBBLE_UPDATE: 'bubble:update'
 } as const
