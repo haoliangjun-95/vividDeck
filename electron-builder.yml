@@ -9,6 +9,9 @@ directories:
   output: dist
   buildResources: build
 
+# 打包后、rcedit 改 PE 资源前等待杀毒实时扫描释放 exe（Windows 专用，见脚本头部说明）
+afterPack: scripts/after-pack.cjs
+
 files:
   - out/**
   - "!**/.map"
@@ -50,7 +53,10 @@ win:
 
 nsis:
   oneClick: false
-  perMachine: false
+  # 按机器安装：安装器以 admin 运行（UAC 提权），才能写入用户选择的
+  # Program Files 类目录（如 E:\Program Files\VividDeck，普通用户对这类目录只读）。
+  # 须与 installer.nsh preInit 指向 $PROGRAMFILES64 的安装位置保持一致。
+  perMachine: true
   allowToChangeInstallationDirectory: true
   artifactName: vividDeck-Setup-${version}.exe
   shortcutName: vividDeck
