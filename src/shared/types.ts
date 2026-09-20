@@ -92,8 +92,12 @@ export interface SlideshowConfig {
   fillMode: FillMode
   /** 目标显示器（多选；显示器不存在时自动跳过） */
   monitorIds: string[]
-  /** 顺序模式的下次索引 / 随机模式的上一次索引（重启续播） */
+  /** 多显示器时各屏独立切换不同照片（false = 所有屏同一张） */
+  independentMonitors: boolean
+  /** 顺序模式的下次索引 / 随机模式的上一次索引（重启续播；共享模式用） */
   lastIndex: number
+  /** 独立模式下各显示器的顺序游标（monitorId -> index，重启续播） */
+  lastIndexByMonitor: Record<string, number>
   lastAppliedAt: number | null
 }
 

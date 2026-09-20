@@ -162,6 +162,17 @@ export function SlideshowPanel(): JSX.Element {
       {/* 显示器 */}
       <section className="space-y-2">
         <div className="font-medium">目标显示器（不选 = 全部）</div>
+        {monitors.length > 1 && (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-indigo-600"
+              checked={config.independentMonitors}
+              onChange={(e) => void patch({ independentMonitors: e.target.checked })}
+            />
+            每个显示器切换不同照片（关闭则所有屏同步同一张）
+          </label>
+        )}
         {monitors.map((m) => {
           const active = config.monitorIds.includes(m.id)
           return (
