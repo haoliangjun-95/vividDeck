@@ -2,6 +2,26 @@
 
 一套代码同时支持 **Windows 10/11** 与 **macOS（Ventura / Sonoma 及以上）** 的本地壁纸管理工具，数据全部本地存储、不上云。
 
+## 功能截图
+
+| 画廊与筛选 | 灯箱预览（缩放 / 信息面板 / 标签） |
+|:---:|:---:|
+| ![画廊](docs/images/gallery.jpg) | ![灯箱](docs/images/lightbox.jpg) |
+
+| 一键设壁纸（多显示器 + 填充模式） | 壁纸裁剪（按屏幕比例 / 自由） |
+|:---:|:---:|
+| ![设壁纸](docs/images/set-wallpaper.jpg) | ![裁剪](docs/images/crop.jpg) |
+
+| 轮播计划 | 壁纸历史（一键回溯） |
+|:---:|:---:|
+| ![轮播](docs/images/slideshow.jpg) | ![历史](docs/images/history.jpg) |
+
+| 设置（主题 / 默认填充 / 存储位置 / MinIO 同步） | 桌面悬浮球（单击换壁纸） |
+|:---:|:---:|
+| ![设置](docs/images/settings.jpg) | ![悬浮球](docs/images/bubble.jpg) |
+
+> 截图由 `scripts/capture-screenshots.mjs` 基于真实界面自动采集，可在换新 UI 后重跑更新。
+
 ## 功能总览
 
 ### 素材库管理
