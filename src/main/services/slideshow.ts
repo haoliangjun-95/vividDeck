@@ -15,6 +15,7 @@ import { getLibrary } from './library'
 import { applyWallpaper, listMonitors } from './wallpaper'
 import { recordApply } from './history'
 import { ensureLocal } from './sync/engine'
+import { matchAlbum } from '@shared/album'
 
 const DEFAULT_CONFIG: SlideshowConfig = {
   enabled: false,
@@ -56,10 +57,12 @@ function intervalMs(config: SlideshowConfig): number {
 
 /** 依据范围计算素材池（图片 ID，按加入时间排序保证顺序模式稳定） */
 function computePool(config: SlideshowConfig): string[] {
-  const images = getLibrary().images
-  const filtered = images.filter((img) => {
+  const data = getLibrary()
+  const album = config.scope.type === 'album' ? (data.albums ?? []).find((a) => a.id === config.scope.albumId) : undefined
+  const filtered = data.images.filter((img) => {
     if (config.scope.type === 'favorite') return img.favorite
     if (config.scope.type === 'category') return img.categoryId === config.scope.categoryId
+    if (config.scope.type === 'album') return album ? matchAlbum(img, album) : false
     return true
   })
   return filtered.sort((a, b) => a.addedAt - b.addedAt).map((img) => img.id)

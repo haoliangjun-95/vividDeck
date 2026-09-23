@@ -65,6 +65,10 @@ const api = {
   renameCategory: (id: string, name: string) => call<LibraryData>(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
   deleteCategory: (id: string) => call<LibraryData>(IPC.LIBRARY_DELETE_CATEGORY, { id }),
   reorderCategories: (ids: string[]) => call<LibraryData>(IPC.LIBRARY_REORDER_CATEGORIES, { ids }),
+  addAlbum: (name: string, rules: import('@shared/types').SmartAlbumRules) => call<LibraryData>(IPC.ALBUM_ADD, { name, rules }),
+  updateAlbum: (id: string, patch: Partial<Pick<import('@shared/types').SmartAlbum, 'name' | 'rules'>>) => call<LibraryData>(IPC.ALBUM_UPDATE, { id, patch }),
+  deleteAlbum: (id: string) => call<LibraryData>(IPC.ALBUM_DELETE, { id }),
+  countAlbum: (rules: import('@shared/types').SmartAlbumRules) => call<number>(IPC.ALBUM_COUNT, { rules }),
 
   // ---------- 壁纸 ----------
   listMonitors: () => call<MonitorInfo[]>(IPC.WALLPAPER_LIST_MONITORS),

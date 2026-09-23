@@ -20,7 +20,11 @@ import {
   renameCategory,
   renameImage,
   reorderCategories,
+  addAlbum,
+  countAlbum,
+  deleteAlbum,
   setTagsMany,
+  updateAlbum,
   updateImage,
   updateImages
 } from './services/library'
@@ -219,6 +223,12 @@ export function registerIpcHandlers(): void {
     IPC.LIBRARY_REORDER_CATEGORIES,
     wrap((payload: { ids: string[] }) => reorderCategories(payload.ids))
   )
+
+  // ---------- 智能相册 ----------
+  ipcMain.handle(IPC.ALBUM_ADD, wrap((payload: { name: string; rules: import('@shared/types').SmartAlbumRules }) => addAlbum(payload.name, payload.rules)))
+  ipcMain.handle(IPC.ALBUM_UPDATE, wrap((payload: { id: string; patch: Partial<Pick<import('@shared/types').SmartAlbum, 'name' | 'rules'>> }) => updateAlbum(payload.id, payload.patch)))
+  ipcMain.handle(IPC.ALBUM_DELETE, wrap((payload: { id: string }) => deleteAlbum(payload.id)))
+  ipcMain.handle(IPC.ALBUM_COUNT, wrap((payload: { rules: import('@shared/types').SmartAlbumRules }) => countAlbum(payload.rules)))
 
   // ---------- 壁纸 ----------
   ipcMain.handle(IPC.WALLPAPER_LIST_MONITORS, wrap(() => listMonitors()))

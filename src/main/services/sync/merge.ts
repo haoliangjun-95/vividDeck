@@ -10,6 +10,7 @@
 import type {
   Category,
   ImageItem,
+  SmartAlbum,
   SyncImageRecord,
   SyncManifest,
   SyncTombstone
@@ -20,6 +21,8 @@ export interface MergeInput {
   /** 本地全量记录 */
   localImages: ImageItem[]
   localCategories: Category[]
+  /** 本地智能相册 */
+  localAlbums: SmartAlbum[]
   /** 本地墓碑 */
   localTombstones: SyncTombstone[]
   /** 远端全部清单快照（含 base 压缩基线，全部参与合并） */
@@ -29,6 +32,8 @@ export interface MergeInput {
 export interface MergeOutput {
   images: ImageItem[]
   categories: Category[]
+  /** 合并后的智能相册（id 维度 LWW + 墓碑） */
+  albums: SmartAlbum[]
   /** 合并后的墓碑全集（写回本地下次发布） */
   tombstones: SyncTombstone[]
   /** 需要发布到远端的新清单（null = 与已发布状态无差异，可跳过写入） */
@@ -233,6 +238,26 @@ export function mergeAll(input: MergeInput): MergeOutput {
     }
   }
 
+  // ---------- 5.5b) 智能相册合并（id 维度 LWW；墓碑同分类） ----------
+  const albumMap = new Map<string, SmartAlbum>()
+  for (const a of input.localAlbums) {
+    if (isDead(a.id)) continue
+    albumMap.set(a.id, a)
+  }
+  for (const m of input.remoteManifests) {
+    for (const a of m.albums ?? []) {
+      if (isDead(a.id)) continue
+      const existing = albumMap.get(a.id)
+      if (!existing) {
+        albumMap.set(a.id, a)
+      } else {
+        const winner = newer(a, existing) ? a : existing
+        albumMap.set(a.id, winner)
+      }
+    }
+  }
+  const albums = Array.from(albumMap.values()).sort((a, b) => (a.id < b.id ? -1 : 1))
+
   // ---------- 5.6) 孤儿分类引用兜底 ----------
   // 重定向映射只存在于本次合并内存中；离线设备稍后上传的新图可能仍引用
   // 已被去重/删除的旧分类 id——统一回落到"未分类"，保证图片始终可见。
@@ -252,9 +277,10 @@ export function mergeAll(input: MergeInput): MergeOutput {
   const idealCategories = [...categories].sort((a, b) => (a.id < b.id ? -1 : 1))
   const idealTombstones = [...tombstones].sort((a, b) => (a.id < b.id ? -1 : 1))
 
+  const idealAlbums = [...albums].sort((a, b) => (a.id < b.id ? -1 : 1))
   const sameAs = (m: SyncManifest): boolean =>
-    JSON.stringify([m.images, m.categories, m.tombstones]) ===
-    JSON.stringify([idealRecords, idealCategories, idealTombstones])
+    JSON.stringify([m.images, m.categories, m.albums ?? [], m.tombstones]) ===
+    JSON.stringify([idealRecords, idealCategories, idealAlbums, idealTombstones])
 
   // 远端任一清单已等于理想态且本设备最后发布也在其中 → 无需重复发布
   const manifestToPublish: SyncManifest | null = remoteManifests.some(sameAs)
@@ -265,10 +291,11 @@ export function mergeAll(input: MergeInput): MergeOutput {
         updatedBy: '', // engine 填 deviceId
         images: idealRecords,
         categories: idealCategories,
+        albums: idealAlbums,
         tombstones: idealTombstones
       }
 
   stats.pushed = manifestToPublish ? idealRecords.length : 0
 
-  return { images, categories, tombstones, manifestToPublish, stats }
+  return { images, categories, albums, tombstones, manifestToPublish, stats }
 }

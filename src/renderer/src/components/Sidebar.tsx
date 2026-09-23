@@ -1,8 +1,10 @@
 /**
  * 侧边栏：视图切换（全部/收藏）、分类列表（拖拽归类目标 + 管理）、标签云、功能入口
  */
-import React from 'react'
-import { FolderOpen, Heart, History, Images, Layers, Monitor, Settings, Tag, Pencil } from 'lucide-react'
+import React, { useState } from 'react'
+import { FolderOpen, Heart, History, Images, Layers, Monitor, Plus, Settings, Sparkles, Tag, Pencil } from 'lucide-react'
+import { matchAlbum } from '@shared/album'
+import { AlbumEditorModal } from './AlbumEditorModal'
 import { useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 
@@ -94,6 +96,7 @@ export function Sidebar(): JSX.Element {
   const images = useLibraryStore((s) => s.images)
   const categories = useLibraryStore((s) => s.categories)
   const tags = useLibraryStore((s) => s.tags)
+  const albums = useLibraryStore((s) => s.albums)
   const filter = useLibraryStore((s) => s.filter)
   const setFilter = useLibraryStore((s) => s.setFilter)
   const assignCategory = useLibraryStore((s) => s.assignCategory)
@@ -101,6 +104,7 @@ export function Sidebar(): JSX.Element {
   const drawer = useUIStore((s) => s.drawer)
   const openDrawer = useUIStore((s) => s.openDrawer)
   const setCategoryManagerOpen = useUIStore((s) => s.setCategoryManagerOpen)
+  const [albumEditorOpen, setAlbumEditorOpen] = useState(false)
 
   // 分类拖拽排序状态
   const [dragCatId, setDragCatId] = React.useState<string | null>(null)
@@ -233,6 +237,41 @@ export function Sidebar(): JSX.Element {
           />
         </section>
 
+        {/* 智能相册（保存的组合筛选规则） */}
+        {albums.length > 0 && (
+          <section>
+            <div className="mb-1 flex items-center justify-between px-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">智能相册</span>
+              <button className="btn-ghost !p-1" title="新建智能相册" onClick={() => setAlbumEditorOpen(true)}>
+                <Plus size={12} />
+              </button>
+            </div>
+            {albums.map((album) => (
+              <NavItem
+                key={album.id}
+                active={filter.albumId === album.id}
+                icon={<Sparkles size={16} className="text-fuchsia-500" />}
+                label={album.name}
+                count={images.filter((img) => matchAlbum(img, album)).length}
+                onClick={() => setFilter({ albumId: filter.albumId === album.id ? null : album.id })}
+                onDrop={(imageId) => void assignCategory(imageId, null)}
+                dropLabel="移出分类"
+              />
+            ))}
+          </section>
+        )}
+        {albums.length === 0 && (
+          <section className="px-2.5">
+            <button
+              className="flex w-full items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-2.5 py-1.5 text-left text-xs text-neutral-400 transition-colors hover:border-indigo-400 hover:text-indigo-500 dark:border-neutral-700"
+              onClick={() => setAlbumEditorOpen(true)}
+            >
+              <Sparkles size={14} />
+              新建智能相册（组合筛选）
+            </button>
+          </section>
+        )}
+
         {/* 标签（多选筛选，任一命中即显示） */}
         {tags.length > 0 && (
           <section>
@@ -273,6 +312,8 @@ export function Sidebar(): JSX.Element {
           </section>
         )}
       </div>
+
+      {albumEditorOpen && <AlbumEditorModal onClose={() => setAlbumEditorOpen(false)} />}
 
       {/* 功能入口 */}
       <div className="space-y-0.5 border-t border-neutral-200 p-2.5 dark:border-neutral-800">

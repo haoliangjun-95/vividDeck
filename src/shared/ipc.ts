@@ -29,6 +29,10 @@ export const IPC = {
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData
   LIBRARY_REORDER_CATEGORIES: 'library:reorderCategories', // { ids } -> LibraryData（拖拽排序）
+  ALBUM_ADD: 'album:add', // { name, rules } -> LibraryData
+  ALBUM_UPDATE: 'album:update', // { id, patch } -> LibraryData
+  ALBUM_DELETE: 'album:delete', // { id } -> LibraryData
+  ALBUM_COUNT: 'album:count', // { rules } -> number（编辑器实时预览）
 
   // 壁纸
   WALLPAPER_LIST_MONITORS: 'wallpaper:listMonitors', // -> MonitorInfo[]

@@ -53,6 +53,34 @@ export interface LibraryData {
   images: ImageItem[]
   categories: Category[]
   tags: string[]
+  /** 智能相册（随素材库同步传播） */
+  albums: SmartAlbum[]
+}
+
+/** 智能相册规则（全部条件 AND 叠加；缺省项不参与过滤） */
+export interface SmartAlbumRules {
+  /** 全部命中的标签（交集） */
+  tagsAll?: string[]
+  /** 任一命中的标签（并集） */
+  tagsAny?: string[]
+  /** 横图 landscape（宽≥高）/ 竖图 portrait（高>宽） */
+  orientation?: 'landscape' | 'portrait'
+  /** 宽高比下限/上限（如 16/9 ≈ 1.78） */
+  minAspect?: number
+  maxAspect?: number
+  /** 最小宽度（像素） */
+  minWidth?: number
+  /** 属于任一分类 */
+  categoryIds?: string[]
+  favoriteOnly?: boolean
+}
+
+export interface SmartAlbum {
+  id: string
+  name: string
+  rules: SmartAlbumRules
+  createdAt: number
+  updatedAt: number
 }
 
 /** 显示器信息（跨平台统一抽象） */
@@ -76,9 +104,11 @@ export type SlideshowOrder = 'random' | 'sequential'
 
 /** 轮播素材范围 */
 export interface SlideshowScope {
-  type: 'all' | 'category' | 'favorite'
+  type: 'all' | 'category' | 'favorite' | 'album'
   /** type === 'category' 时的分类 ID */
   categoryId?: string
+  /** type === 'album' 时的智能相册 ID */
+  albumId?: string
 }
 
 /** 轮播配置（全部本地持久化） */
@@ -204,6 +234,7 @@ export interface SyncManifest {
   updatedBy: string
   images: SyncImageRecord[]
   categories: Category[]
+  albums?: SmartAlbum[]
   tombstones: SyncTombstone[]
 }
 
@@ -227,6 +258,8 @@ export interface LibraryFilter {
   categoryId: string | null | 'all' | 'favorites'
   /** 多选标签筛选（任一命中即显示） */
   tags: string[]
+  /** 智能相册筛选（与其他条件 AND 叠加） */
+  albumId: string | null
   /** 最小宽度（像素），0 为不限 */
   minWidth: number
   /** 文件大小下/上限（MB），0 为不限 */

@@ -10,6 +10,7 @@ import type { IntervalUnit, MonitorInfo, SlideshowConfig, SlideshowOrder } from 
 export function SlideshowPanel(): JSX.Element {
   const toast = useUIStore((s) => s.toast)
   const categories = useLibraryStore((s) => s.categories)
+  const albums = useLibraryStore((s) => s.albums)
   const favoriteCount = useLibraryStore((s) => s.images.filter((img) => img.favorite).length)
   const totalCount = useLibraryStore((s) => s.images.length)
   const [config, setConfig] = useState<SlideshowConfig | null>(null)
@@ -97,7 +98,8 @@ export function SlideshowPanel(): JSX.Element {
           {[
             { key: 'all', label: `全部图库（${totalCount} 张）` },
             { key: 'favorite', label: `收藏图片（${favoriteCount} 张）` },
-            ...categories.map((c) => ({ key: `category:${c.id}`, label: `分类：${c.name}` }))
+            ...categories.map((c) => ({ key: `category:${c.id}`, label: `分类：${c.name}` })),
+            ...albums.map((a) => ({ key: `album:${a.id}`, label: `智能相册：${a.name}` }))
           ].map((opt) => {
             const active =
               opt.key === 'all'
@@ -120,7 +122,9 @@ export function SlideshowPanel(): JSX.Element {
                         ? { type: 'all' }
                         : opt.key === 'favorite'
                           ? { type: 'favorite' }
-                          : { type: 'category', categoryId: opt.key.split(':')[1] }
+                          : opt.key.startsWith('album:')
+                            ? { type: 'album', albumId: opt.key.split(':')[1] }
+                            : { type: 'category', categoryId: opt.key.split(':')[1] }
                   })
                 }
               >

@@ -159,6 +159,7 @@ export async function syncNow(): Promise<SyncResultStats> {
     const merged = mergeAll({
       localImages: local.images,
       localCategories: local.categories,
+      localAlbums: local.albums ?? [],
       localTombstones: listTombstones(),
       remoteManifests: manifests.map((m) => m.manifest)
     })
@@ -167,8 +168,13 @@ export async function syncNow(): Promise<SyncResultStats> {
     // 3) 本地落地（远端新记录进入本地；本地态保留）
     applying = true
     try {
-      if (merged.images.length !== local.images.length || merged.categories.length !== local.categories.length || stats.pulled > 0) {
-        applySyncMerge(merged.images, merged.categories)
+      if (
+        merged.images.length !== local.images.length ||
+        merged.categories.length !== local.categories.length ||
+        (merged.albums?.length ?? 0) !== (local.albums ?? []).length ||
+        stats.pulled > 0
+      ) {
+        applySyncMerge(merged.images, merged.categories, merged.albums)
         replaceTombstones(merged.tombstones)
         broadcast(IPC_EVENTS.LIBRARY_CHANGED)
       } else {
@@ -246,6 +252,7 @@ export async function syncNow(): Promise<SyncResultStats> {
         favorite: img.favorite, addedAt: img.addedAt, updatedAt: img.updatedAt, updatedBy: img.updatedBy ?? ''
       })),
       categories: merged.categories,
+      albums: merged.albums,
       tombstones: merged.tombstones
     })
 

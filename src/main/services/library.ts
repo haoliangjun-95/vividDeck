@@ -9,6 +9,8 @@ import path from 'node:path'
 import sharp from 'sharp'
 import {
   DEFAULT_CATEGORY_NAMES,
+  type SmartAlbum,
+  type SmartAlbumRules,
   SUPPORTED_EXTENSIONS,
   type Category,
   type CropRect,
@@ -23,6 +25,7 @@ import { isRealFile, libraryDir, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
 import { getDeviceId } from './device'
+import { matchAlbum } from '@shared/album'
 import { addTombstone, removeTombstones } from './tombstones'
 import type { SyncImageRecord } from '@shared/types'
 
@@ -30,7 +33,8 @@ import type { SyncImageRecord } from '@shared/types'
 const libraryStore = new JsonStore<LibraryData>('library', {
   images: [],
   categories: [],
-  tags: []
+  tags: [],
+  albums: []
 })
 
 /** 素材库变化监听（同步引擎注册，用于防抖触发增量同步） */
@@ -71,6 +75,16 @@ function ensureDefaultCategories(): void {
   }
 }
 ensureDefaultCategories()
+
+/** 旧数据 albums 字段兜底 */
+function ensureAlbumsField(): void {
+  const data = libraryStore.get()
+  if (!data.albums) {
+    libraryStore.set({ albums: [] } as Partial<LibraryData>)
+    libraryStore.flush()
+  }
+}
+ensureAlbumsField()
 
 /** 二期字段 backfill：一期记录无 updatedAt / localFile，按本地文件实际存在情况补齐 */
 function backfillSyncFields(): void {
@@ -587,16 +601,49 @@ export function deleteCategory(id: string): LibraryData {
   })
 }
 
+// ---------- 智能相册 ----------
+
+export function addAlbum(name: string, rules: SmartAlbumRules): LibraryData {
+  const safe = name.trim()
+  if (!safe) return getLibrary()
+  return commit((data) => {
+    data.albums = [...(data.albums ?? []), { id: genId(), name: safe, rules, createdAt: Date.now(), updatedAt: Date.now() }]
+  })
+}
+
+export function updateAlbum(id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>): LibraryData {
+  return commit((data) => {
+    const t = (data.albums ?? []).find((a) => a.id === id)
+    if (!t) return
+    if (patch.name?.trim()) t.name = patch.name.trim()
+    if (patch.rules) t.rules = patch.rules
+    t.updatedAt = Date.now()
+  })
+}
+
+export function deleteAlbum(id: string): LibraryData {
+  return commit((data) => {
+    data.albums = (data.albums ?? []).filter((a) => a.id !== id)
+  })
+}
+
+/** 相册匹配计数（编辑器实时预览用） */
+export function countAlbum(rules: SmartAlbumRules): number {
+  const probe: SmartAlbum = { id: '__probe__', name: '', rules, createdAt: 0, updatedAt: 0 }
+  return getLibrary().images.filter((img) => matchAlbum(img, probe)).length
+}
+
 // ---------- 同步引擎专用入口 ----------
 
 /**
  * 应用远端合并结果（sync/engine 调用）：
  * 本地有文件的记录保留本地 path/localFile，其余按合并结果落地。
  */
-export function applySyncMerge(images: ImageItem[], categories: Category[]): LibraryData {
+export function applySyncMerge(images: ImageItem[], categories: Category[], albums?: SmartAlbum[]): LibraryData {
   return commit((data) => {
     data.images = images
     data.categories = categories
+    if (albums) data.albums = albums
   })
 }
 

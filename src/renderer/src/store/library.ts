@@ -2,7 +2,8 @@
  * 素材库状态：数据 + 筛选 + 排序 + 全部业务动作（渲染层唯一数据源）
  */
 import { create } from 'zustand'
-import type { Category, ImageItem, ImportResult, LibraryData, LibraryFilter } from '@shared/types'
+import type { Category, ImageItem, ImportResult, LibraryData, LibraryFilter, SmartAlbum, SmartAlbumRules } from '@shared/types'
+import { matchAlbum } from '@shared/album'
 
 export type SortKey = 'added-desc' | 'added-asc' | 'name-asc' | 'size-desc'
 
@@ -10,6 +11,7 @@ interface LibraryState {
   images: ImageItem[]
   categories: Category[]
   tags: string[]
+  albums: SmartAlbum[]
   loaded: boolean
   /** 导入进行中（界面显示加载态） */
   importing: boolean
@@ -30,6 +32,9 @@ interface LibraryState {
   removeMany: (ids: string[]) => Promise<void>
   /** 批量：按图设置标签（增/删混合，单次事务） */
   setTagsMany: (entries: { id: string; tags: string[] }[]) => Promise<void>
+  addAlbum: (name: string, rules: SmartAlbumRules) => Promise<void>
+  updateAlbum: (id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>) => Promise<void>
+  deleteAlbum: (id: string) => Promise<void>
   addCategory: (name: string) => Promise<void>
   renameCategory: (id: string, name: string) => Promise<void>
   reorderCategories: (ids: string[]) => Promise<void>
@@ -42,6 +47,7 @@ const DEFAULT_FILTER: LibraryFilter = {
   keyword: '',
   categoryId: 'all',
   tags: [],
+  albumId: null,
   minWidth: 0,
   minSizeMB: 0,
   maxSizeMB: 0
@@ -51,6 +57,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   images: [],
   categories: [],
   tags: [],
+  albums: [],
   loaded: false,
   importing: false,
   filter: DEFAULT_FILTER,
@@ -63,7 +70,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   applyData: (data) =>
-    set({ images: data.images, categories: data.categories, tags: data.tags }),
+    set({ images: data.images, categories: data.categories, tags: data.tags, albums: data.albums ?? [] }),
 
   importFiles: async (paths) => {
     set({ importing: true })
@@ -118,6 +125,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     get().applyData(data)
   },
 
+  addAlbum: async (name, rules) => {
+    const data = await window.api.addAlbum(name, rules)
+    get().applyData(data)
+  },
+
+  updateAlbum: async (id, patch) => {
+    const data = await window.api.updateAlbum(id, patch)
+    get().applyData(data)
+  },
+
+  deleteAlbum: async (id) => {
+    const data = await window.api.deleteAlbum(id)
+    get().applyData(data)
+  },
+
   addCategory: async (name) => {
     const data = await window.api.addCategory(name)
     get().applyData(data)
@@ -146,8 +168,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 export function selectFilteredImages(state: LibraryState): ImageItem[] {
   const { images, filter, sort } = state
   const kw = filter.keyword.trim().toLowerCase()
+  const album = state.albums.find((a) => a.id === filter.albumId)
 
   const filtered = images.filter((img) => {
+    // 智能相册规则（与其他条件 AND 叠加）
+    if (album && !matchAlbum(img, album)) return false
     if (filter.categoryId === 'favorites') {
       if (!img.favorite) return false
     } else if (filter.categoryId === 'uncategorized') {

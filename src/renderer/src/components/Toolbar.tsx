@@ -2,9 +2,11 @@
  * 工具栏：导入图片/文件夹、关键词搜索、分辨率与文件大小筛选、排序
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { FilePlus2, FolderPlus, ListChecks, Loader2, Search } from 'lucide-react'
+import { FilePlus2, FolderPlus, ListChecks, Loader2, Search, Sparkles } from 'lucide-react'
+import { AlbumEditorModal } from './AlbumEditorModal'
 import { useLibraryStore, selectFilteredImages, type SortKey } from '../store/library'
 import { useUIStore } from '../store/ui'
+import type { LibraryFilter } from '@shared/types'
 
 const MIN_WIDTH_OPTIONS = [
   { value: 0, label: '分辨率不限' },
@@ -41,8 +43,12 @@ export function Toolbar(): JSX.Element {
   const selectionMode = useUIStore((s) => s.selectionMode)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
 
+  const [saveAlbumOpen, setSaveAlbumOpen] = useState(false)
+
   // 搜索防抖：本地输入即时回显，250ms 后才提交到 store 触发全量过滤
   const [keyword, setKeyword] = useState(filter.keyword)
+  const hasCustomFilter =
+    filter.categoryId !== 'all' || filter.tags.length > 0 || filter.minWidth > 0 || filter.minSizeMB > 0 || filter.maxSizeMB > 0 || filter.keyword.trim() !== ''
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -79,6 +85,14 @@ export function Toolbar(): JSX.Element {
         <FolderPlus size={15} />
         导入文件夹
       </button>
+
+      {/* 当前筛选存为智能相册 */}
+      {hasCustomFilter && (
+        <button className="btn-ghost border border-fuchsia-300 !text-fuchsia-600 dark:border-fuchsia-800 dark:!text-fuchsia-400" onClick={() => setSaveAlbumOpen(true)} title="把当前筛选条件保存为智能相册">
+          <Sparkles size={15} />
+          存为相册
+        </button>
+      )}
 
       {/* 批量选择开关（选择模式下高亮，Esc 退出） */}
       <button
@@ -140,6 +154,26 @@ export function Toolbar(): JSX.Element {
       <span className="w-20 text-right text-xs tabular-nums text-neutral-400">
         {total} / {totalCount}
       </span>
+
+      {saveAlbumOpen && (
+        <SaveFilterAsAlbum
+          filter={filter}
+          onClose={() => setSaveAlbumOpen(false)}
+        />
+      )}
     </div>
   )
+}
+
+/** 把当前工具栏/侧栏筛选转成相册规则，打开编辑器（预填规则起点） */
+function SaveFilterAsAlbum({ filter, onClose }: { filter: LibraryFilter; onClose: () => void }): JSX.Element {
+  const rules: import('@shared/types').SmartAlbumRules = {
+    ...(filter.tags.length > 0 ? { tagsAny: [...filter.tags] } : {}),
+    ...(filter.minWidth > 0 ? { minWidth: filter.minWidth } : {}),
+    ...(filter.categoryId === 'favorites' ? { favoriteOnly: true } : {}),
+    ...(filter.categoryId && filter.categoryId !== 'all' && filter.categoryId !== 'favorites' && filter.categoryId !== 'uncategorized'
+      ? { categoryIds: [filter.categoryId] }
+      : {})
+  }
+  return <AlbumEditorModal initialRules={rules} onClose={onClose} />
 }
