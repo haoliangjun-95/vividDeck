@@ -26,6 +26,8 @@ const DEFAULT_CONFIG: SlideshowConfig = {
   fillMode: 'fill',
   monitorIds: [], // 空 = 全部显示器
   independentMonitors: true, // 多显示器时各屏独立切换不同照片
+  monitorOverrides: {},
+  lastAppliedAtByMonitor: {},
   lastIndex: 0,
   lastIndexByMonitor: {},
   lastAppliedAt: null
@@ -34,6 +36,8 @@ const DEFAULT_CONFIG: SlideshowConfig = {
 const slideshowStore = new JsonStore<SlideshowConfig>('slideshow', DEFAULT_CONFIG)
 
 let timer: NodeJS.Timeout | null = null
+/** 独立模式每屏各自的定时器 */
+const monitorTimers = new Map<string, NodeJS.Timeout>()
 let running = false
 /** 随机模式的洗牌队列（图片 ID；独立模式下按显示器各一份，'' 键 = 共享队列） */
 const shuffleQueues = new Map<string, string[]>()
@@ -122,6 +126,99 @@ function nextImageId(pool: string[], config: SlideshowConfig, cursorKey = '', ex
   return picked
 }
 
+/** 解析某屏的有效轮播参数（override 覆盖全局，缺省继承） */
+function effectiveConfig(config: SlideshowConfig, monitorId: string): SlideshowConfig & { disabled: boolean } {
+  const o = config.monitorOverrides?.[monitorId] ?? {}
+  return {
+    ...config,
+    scope: o.scope ?? config.scope,
+    intervalValue: o.intervalValue ?? config.intervalValue,
+    intervalUnit: o.intervalUnit ?? config.intervalUnit,
+    fillMode: o.fillMode ?? config.fillMode,
+    disabled: o.disabled ?? false
+  }
+}
+
+/** 后台预取：把该屏池中游标之后的 N 张云端图提前下载（不阻塞切换） */
+function prefetchNext(pool: string[], config: SlideshowConfig, cursorKey: string, count = 3): void {
+  const images = getLibrary().images
+  const store = slideshowStore.get()
+  const cur = cursorKey === '' ? store.lastIndex : (store.lastIndexByMonitor?.[cursorKey] ?? 0)
+  const upcoming: string[] = []
+  if (config.order === 'sequential') {
+    for (let i = 1; i <= count; i++) {
+      const id = pool[(cur + i) % pool.length]
+      if (id) upcoming.push(id)
+    }
+  } else {
+    const queue = shuffleQueues.get(cursorKey) ?? []
+    upcoming.push(...queue.slice(0, count))
+  }
+  for (const id of upcoming) {
+    const img = images.find((i) => i.id === id)
+    if (img && !img.localFile) {
+      void ensureLocal(id).catch(() => undefined)
+    }
+  }
+}
+
+/** 单屏切换（独立模式每屏各自的 tick） */
+async function tickMonitor(monitorId: string, manual = false): Promise<void> {
+  const config = getSlideshowConfig()
+  const eff = effectiveConfig(config, monitorId)
+  if (eff.disabled) return
+  const pool = computePool(eff)
+  if (pool.length === 0) return
+  try {
+    const imageId = nextImageId(pool, eff, monitorId)
+    if (!imageId) return
+    const image = getLibrary().images.find((img) => img.id === imageId)
+    if (!image) return
+    let filePath = image.path
+    if (!image.localFile || !fs.existsSync(image.path)) {
+      filePath = await ensureLocal(image.id)
+    }
+    const result = await applyWallpaper(filePath, [monitorId], eff.fillMode)
+    const entry = recordApply(imageId, result.applied, eff.fillMode)
+    slideshowStore.set({ lastAppliedAtByMonitor: { ...slideshowStore.get().lastAppliedAtByMonitor, [monitorId]: Date.now() } })
+    broadcast(IPC_EVENTS.SLIDESHOW_TICK, { entry, entries: [entry], manual })
+    prefetchNext(pool, eff, monitorId)
+  } catch (err) {
+    console.error(`[slideshow] 显示器 ${monitorId} 切换失败:`, err)
+  }
+}
+
+/** 为单屏排下一次切换（独立模式） */
+function scheduleMonitor(monitorId: string, delayMs?: number): void {
+  const config = getSlideshowConfig()
+  const eff = effectiveConfig(config, monitorId)
+  if (!config.enabled || eff.disabled) {
+    const t = monitorTimers.get(monitorId)
+    if (t) clearTimeout(t)
+    monitorTimers.delete(monitorId)
+    return
+  }
+  const old = monitorTimers.get(monitorId)
+  if (old) clearTimeout(old)
+  let delay = delayMs
+  if (delay === undefined) {
+    const interval = intervalMs(eff)
+    const last = slideshowStore.get().lastAppliedAtByMonitor?.[monitorId] ?? 0
+    delay = Math.max(3000, last + interval - Date.now())
+  }
+  const t = setTimeout(() => {
+    void tickMonitor(monitorId).then(() => scheduleMonitor(monitorId))
+  }, delay)
+  t.unref?.()
+  monitorTimers.set(monitorId, t)
+}
+
+/** 清空每屏定时器 */
+function clearMonitorTimers(): void {
+  for (const t of monitorTimers.values()) clearTimeout(t)
+  monitorTimers.clear()
+}
+
 /** 执行一次切换（轮播心脏；独立模式下每个显示器各取一张不同的图） */
 async function tick(manual = false): Promise<void> {
   if (running) return
@@ -175,12 +272,11 @@ async function tick(manual = false): Promise<void> {
   }
 }
 
-/** 依据配置调度下一次切换 */
-function schedule(delayMs?: number): void {
+/** 共享模式调度（全部屏同一张图，单 timer） */
+function scheduleShared(delayMs?: number): void {
   if (timer) clearTimeout(timer)
   const config = getSlideshowConfig()
   if (!config.enabled) return
-
   let delay = delayMs
   if (delay === undefined) {
     // 重启续播：上次切换时间 + 周期 - 现在；已过期则尽快（3s 后）执行
@@ -194,6 +290,32 @@ function schedule(delayMs?: number): void {
     void tick().then(() => schedule())
   }, delay)
   timer.unref?.()
+}
+
+/** 依据配置调度下一次切换（独立模式分派每屏；共享模式单 timer） */
+function schedule(delayMs?: number): void {
+  if (timer) clearTimeout(timer)
+  clearMonitorTimers()
+  const config = getSlideshowConfig()
+  if (!config.enabled) return
+
+  if (config.independentMonitors) {
+    // 每屏独立调度（各自的周期与覆盖配置）；monitor id 来自平台适配层
+    void listMonitors()
+      .then((mons) => {
+        const alive = mons.map((m) => m.id)
+        const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
+        // 至少两屏才有独立意义；单屏退回共享路径
+        if (targets.length > 1) {
+          for (const m of targets) scheduleMonitor(m, delayMs)
+        } else {
+          scheduleShared(delayMs)
+        }
+      })
+      .catch(() => scheduleShared(delayMs))
+    return
+  }
+  scheduleShared(delayMs)
 }
 
 /** 更新配置（部分字段），自动重启调度 */
@@ -214,6 +336,17 @@ export function setSlideshowConfig(patch: Partial<SlideshowConfig>): SlideshowCo
 
 /** 手动触发下一张（托盘菜单 / 界面按钮），并重置计时 */
 export async function nextSlideshowNow(): Promise<void> {
+  const config = getSlideshowConfig()
+  if (config.independentMonitors) {
+    const mons = await listMonitors().catch(() => [] as { id: string }[])
+    const alive = mons.map((m) => m.id)
+    const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
+    if (targets.length > 1) {
+      for (const m of targets) await tickMonitor(m, true)
+      if (config.enabled) for (const m of targets) scheduleMonitor(m)
+      return
+    }
+  }
   await tick(true)
   if (getSlideshowConfig().enabled) schedule()
 }

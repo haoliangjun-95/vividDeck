@@ -111,6 +111,16 @@ export interface SlideshowScope {
   albumId?: string
 }
 
+/** 单显示器轮播覆盖（缺省项继承全局配置） */
+export interface MonitorOverride {
+  scope?: SlideshowScope
+  intervalValue?: number
+  intervalUnit?: IntervalUnit
+  fillMode?: FillMode
+  /** 关闭此屏轮播（其他屏不受影响） */
+  disabled?: boolean
+}
+
 /** 轮播配置（全部本地持久化） */
 export interface SlideshowConfig {
   enabled: boolean
@@ -124,6 +134,10 @@ export interface SlideshowConfig {
   monitorIds: string[]
   /** 多显示器时各屏独立切换不同照片（false = 所有屏同一张） */
   independentMonitors: boolean
+  /** 每屏独立配置覆盖（monitorId -> 覆盖项；仅独立模式生效） */
+  monitorOverrides: Record<string, MonitorOverride>
+  /** 每屏上次切换时间（倒计时展示） */
+  lastAppliedAtByMonitor: Record<string, number>
   /** 顺序模式的下次索引 / 随机模式的上一次索引（重启续播；共享模式用） */
   lastIndex: number
   /** 独立模式下各显示器的顺序游标（monitorId -> index，重启续播） */
