@@ -164,11 +164,36 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setSort: (sort) => set({ sort })
 }))
 
-/** 应用筛选 + 排序后的图片列表（组件内用 useMemo 调用） */
+/**
+ * selectFilteredImages 的模块级记忆化缓存。
+ * zustand 选择器默认用 Object.is 比较返回值：若每次都新建数组，
+ * 任何无关的 store 变更都会触发订阅组件重渲染，并重复执行 O(n log n) 的筛选+排序。
+ * 这里记住上一次的输入引用与结果：输入引用全部不变时返回同一个结果引用。
+ */
+interface FilteredImagesCache {
+  images: ImageItem[]
+  albums: SmartAlbum[]
+  filter: LibraryFilter
+  sort: SortKey
+  result: ImageItem[]
+}
+let filteredCache: FilteredImagesCache | null = null
+
+/** 应用筛选 + 排序后的图片列表（可直接作为 zustand 选择器，引用稳定） */
 export function selectFilteredImages(state: LibraryState): ImageItem[] {
-  const { images, filter, sort } = state
+  const { images, filter, sort, albums } = state
+  if (
+    filteredCache !== null &&
+    filteredCache.images === images &&
+    filteredCache.albums === albums &&
+    filteredCache.filter === filter &&
+    filteredCache.sort === sort
+  ) {
+    return filteredCache.result
+  }
+
   const kw = filter.keyword.trim().toLowerCase()
-  const album = state.albums.find((a) => a.id === filter.albumId)
+  const album = albums.find((a) => a.id === filter.albumId)
 
   const filtered = images.filter((img) => {
     // 智能相册规则（与其他条件 AND 叠加）
@@ -203,5 +228,6 @@ export function selectFilteredImages(state: LibraryState): ImageItem[] {
     default:
       sorted.sort((a, b) => b.addedAt - a.addedAt)
   }
+  filteredCache = { images, albums, filter, sort, result: sorted }
   return sorted
 }

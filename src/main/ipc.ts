@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { IPC } from '@shared/ipc'
-import type { CropRect, FillMode, ImageItem, SyncConfig, SyncDownloadScope } from '@shared/types'
+import type { CropRect, FillMode, ImageItem, SyncConfig, SyncConfigPatch, SyncDownloadScope } from '@shared/types'
 import {
   addCategory,
   cropToNewImage,
@@ -53,6 +53,50 @@ function wrap<A extends unknown[], R>(
       const message = err instanceof Error ? err.message : String(err)
       console.error(`[ipc] 处理失败:`, message)
       return { ok: false, error: message }
+    }
+  }
+}
+
+/**
+ * SYNC_SET_CONFIG 入参校验（主进程边界，H3）：
+ * 渲染层传入的 patch 是不可信输入，endpoint/bucket 直接拼进 MinIO
+ * 连接参数与对象 key，必须先做类型与格式白名单校验，非法即抛错。
+ * 字段白名单：多余字段直接拒绝（updateSyncConfig 是浅合并持久化，
+ * 不拒绝的话渲染端可把任意字段写进 sync-config.json）。
+ */
+const SYNC_PATCH_KEYS = new Set(['endpoint', 'port', 'bucket', 'accessKey', 'useSSL', 'enabled', 'autoSync'])
+
+function assertValidSyncConfigPatch(patch: Partial<SyncConfig>): void {
+  if (typeof patch !== 'object' || patch === null) throw new Error('参数错误：配置必须是对象')
+  for (const key of Object.keys(patch)) {
+    if (!SYNC_PATCH_KEYS.has(key)) throw new Error(`参数错误：不支持的配置字段「${key}」`)
+  }
+  if (patch.endpoint !== undefined) {
+    if (typeof patch.endpoint !== 'string') throw new Error('参数错误：同步地址必须是字符串')
+    // 与 createClient 相同的剥离逻辑：去掉协议前缀与尾斜杠后校验裸主机名
+    const bare = patch.endpoint.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+    if (!/^[A-Za-z0-9.-]{1,253}$/.test(bare)) {
+      throw new Error('同步地址不合法：仅允许字母、数字、点与连字符组成的主机名')
+    }
+  }
+  if (patch.port !== undefined) {
+    if (!Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535) {
+      throw new Error('端口不合法：必须是 1-65535 的整数')
+    }
+  }
+  if (patch.bucket !== undefined) {
+    if (typeof patch.bucket !== 'string' || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(patch.bucket)) {
+      throw new Error('存储桶名不合法：3-63 位小写字母/数字/点/连字符，且以字母或数字开头结尾')
+    }
+  }
+  if (patch.accessKey !== undefined) {
+    if (typeof patch.accessKey !== 'string' || patch.accessKey.length > 128) {
+      throw new Error('AccessKey 不合法')
+    }
+  }
+  for (const key of ['useSSL', 'enabled', 'autoSync'] as const) {
+    if (patch[key] !== undefined && typeof patch[key] !== 'boolean') {
+      throw new Error(`参数错误：${key} 必须是布尔值`)
     }
   }
 }
@@ -259,7 +303,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.SYNC_SET_CONFIG,
-    wrap((patch: Partial<SyncConfig>) => {
+    wrap((payload: SyncConfigPatch) => {
+      // 剥离一次性请求标志（不持久化），只让配置字段进入校验与存储
+      const { confirmInsecure, ...patch } = payload ?? {}
+      assertValidSyncConfigPatch(patch)
+      // H3：关闭 HTTPS 意味着 AccessKey 签名请求与图片全程明文上网，必须显式确认
+      if (patch.useSSL === false && confirmInsecure !== true) {
+        throw new Error('关闭 HTTPS 后同步凭据与图片将以明文传输，请先在确认提示后重试')
+      }
       const before = getSyncCfg()
       const after = updateSyncConfig(patch)
       // 同步目标身份变化 → 清空上传缓存，避免旧桶的"已上传"标记导致新桶漏传
@@ -295,8 +346,9 @@ export function registerIpcHandlers(): void {
     return { ok: true }
   })
   ipcMain.handle(IPC.SYNC_HEALTH_CHECK, wrap(() => runHealthCheck()))
-  ipcMain.handle(IPC.SYNC_HEALTH_CLEAN_ORPHANS, wrap((payload: { keys: string[] }) => cleanupOrphanObjects(payload.keys)))
-  ipcMain.handle(IPC.SYNC_HEALTH_REPAIR_BROKEN, wrap((payload: { ids: string[] }) => repairLocalBroken(payload.ids)))
+  // payload 可为空/畸形（渲染层不可信）：兜底为空数组，由 health 服务再做逐条白名单校验
+  ipcMain.handle(IPC.SYNC_HEALTH_CLEAN_ORPHANS, wrap((payload: { keys?: string[] }) => cleanupOrphanObjects(payload?.keys ?? [])))
+  ipcMain.handle(IPC.SYNC_HEALTH_REPAIR_BROKEN, wrap((payload: { ids?: string[] }) => repairLocalBroken(payload?.ids ?? [])))
   ipcMain.handle(
     IPC.SYNC_VERIFY_INTEGRITY,
     wrap(() =>

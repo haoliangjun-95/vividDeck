@@ -278,9 +278,10 @@ export function mergeAll(input: MergeInput): MergeOutput {
   const idealTombstones = [...tombstones].sort((a, b) => (a.id < b.id ? -1 : 1))
 
   const idealAlbums = [...albums].sort((a, b) => (a.id < b.id ? -1 : 1))
+  // 理想态摘要只算一次（旧实现每份 manifest 重复全量 stringify，多设备大库 ≈ 数十 MB/次）
+  const idealDigest = JSON.stringify([idealRecords, idealCategories, idealAlbums, idealTombstones])
   const sameAs = (m: SyncManifest): boolean =>
-    JSON.stringify([m.images, m.categories, m.albums ?? [], m.tombstones]) ===
-    JSON.stringify([idealRecords, idealCategories, idealAlbums, idealTombstones])
+    JSON.stringify([m.images, m.categories, m.albums ?? [], m.tombstones]) === idealDigest
 
   // 远端任一清单已等于理想态且本设备最后发布也在其中 → 无需重复发布
   const manifestToPublish: SyncManifest | null = remoteManifests.some(sameAs)

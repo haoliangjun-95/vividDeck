@@ -16,6 +16,7 @@ import type {
   MonitorInfo,
   SlideshowConfig,
   SyncConfig,
+  SyncConfigPatch,
   SyncDownloadScope,
   SyncProgress,
   SyncResultStats,
@@ -100,7 +101,7 @@ const api = {
       status: SyncStatus
       secretSet: boolean
     }>,
-  setSyncConfig: (patch: Partial<SyncConfig>) => call<SyncConfig>(IPC.SYNC_SET_CONFIG, patch),
+  setSyncConfig: (patch: SyncConfigPatch) => call<SyncConfig>(IPC.SYNC_SET_CONFIG, patch),
   setSyncSecret: (secretKey: string) => call<{ encrypted: boolean }>(IPC.SYNC_SET_SECRET, { secretKey }),
   testSync: () =>
     ipcRenderer.invoke(IPC.SYNC_TEST) as Promise<{ ok: boolean; bucketCreated?: boolean; error?: string }>,

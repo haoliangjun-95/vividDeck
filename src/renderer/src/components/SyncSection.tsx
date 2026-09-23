@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react'
 import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { formatTime } from '../lib/utils'
-import type { SyncConfig, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
+import type { SyncConfig, SyncConfigPatch, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
 import { formatBytes } from '../lib/utils'
 
 const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
@@ -56,9 +56,13 @@ export function SyncSection(): JSX.Element | null {
 
   if (!config) return null
 
-  const patch = async (p: Partial<SyncConfig>): Promise<void> => {
-    setConfig(await window.api.setSyncConfig(p))
-    reload()
+  const patch = async (p: SyncConfigPatch): Promise<void> => {
+    try {
+      setConfig(await window.api.setSyncConfig(p))
+      reload()
+    } catch (err) {
+      toast(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
   }
 
   const saveAndTest = async (): Promise<void> => {
@@ -156,7 +160,20 @@ export function SyncSection(): JSX.Element | null {
               type="checkbox"
               className="h-3.5 w-3.5 accent-indigo-600"
               checked={config.useSSL}
-              onChange={(e) => void patch({ useSSL: e.target.checked })}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  void patch({ useSSL: true })
+                  return
+                }
+                // H3：关闭 HTTPS 需显式确认（主进程强制校验 confirmInsecure，双保险）
+                if (
+                  window.confirm(
+                    '关闭 HTTPS 后，同步凭据与图片将以明文在网络上传输，仅建议在可信局域网内使用。确定关闭？'
+                  )
+                ) {
+                  void patch({ useSSL: false, confirmInsecure: true })
+                }
+              }}
             />
             HTTPS（{config.useSSL ? '已开启' : '局域网可用 HTTP'}）
           </label>

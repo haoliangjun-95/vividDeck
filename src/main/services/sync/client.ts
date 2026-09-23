@@ -8,6 +8,11 @@
  */
 import * as Minio from 'minio'
 import type { SyncConfig, SyncManifest } from '@shared/types'
+import { runPool } from '../../utils/concurrency'
+import { sanitizeManifest } from './validate'
+
+/** manifest 并发拉取上限（旧实现串行，多设备时同步启动慢；也不应无上限） */
+const MANIFEST_FETCH_CONCURRENCY = 4
 
 export interface RemoteManifestObject {
   key: string
@@ -44,15 +49,19 @@ export async function fetchManifests(client: Minio.Client, bucket: string): Prom
     stream.on('error', reject)
   })
 
+  // C1：远端 manifest 是不可信输入，入库前必须过 sanitizeManifest
+  // （version/images 结构校验 + 逐记录 id/hash/文件名净化，非法记录丢弃）；
+  // 并发拉取（runPool）替代旧串行循环
   const results: RemoteManifestObject[] = []
-  for (const key of keys) {
+  await runPool(keys, MANIFEST_FETCH_CONCURRENCY, async (key) => {
     try {
-      const manifest = await getObjectJson<SyncManifest>(client, bucket, key)
-      if (manifest && manifest.version === 1) results.push({ key, manifest })
+      const raw = await getObjectJson<unknown>(client, bucket, key)
+      const manifest = raw === null ? null : sanitizeManifest(raw, key)
+      if (manifest) results.push({ key, manifest })
     } catch (err) {
       console.error(`[sync/client] 清单读取失败 ${key}:`, err)
     }
-  }
+  })
   return results
 }
 

@@ -185,6 +185,12 @@ export interface SyncConfig {
   autoSync: boolean
 }
 
+/** SYNC_SET_CONFIG 的请求载荷：配置补丁 + 一次性标志（不持久化，主进程消费后剥离） */
+export interface SyncConfigPatch extends Partial<SyncConfig> {
+  /** H3：显式确认明文（HTTP）传输风险 —— 关闭 useSSL 时必须携带 true */
+  confirmInsecure?: boolean
+}
+
 /** 同步状态快照（设置页展示用） */
 export interface SyncStatus {
   configured: boolean

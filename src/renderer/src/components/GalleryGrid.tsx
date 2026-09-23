@@ -2,7 +2,7 @@
  * 画廊网格：缩略图卡片（含分类/标签信息栏）、懒加载分页、拖拽源、
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
@@ -10,9 +10,11 @@ import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
 import { Modal } from './ui'
 import type { ImageItem } from '@shared/types'
 
+/** 缩略图加载失败后的重试延迟（导入大文件夹时缩略图可能尚未生成） */
+const THUMBNAIL_RETRY_DELAY_MS = 1200
 
-/** 卡片信息栏：分类徽章 + 标签 chips */
-function CardInfoFooter({ image }: { image: ImageItem }) {
+/** 卡片信息栏：分类徽章 + 标签 chips（memo：父卡片重渲染时按 image 引用跳过） */
+const CardInfoFooter = React.memo(function CardInfoFooter({ image }: { image: ImageItem }) {
   const category = useLibraryStore((s) => s.categories.find((c) => c.id === image.categoryId))
   const visibleTags = image.tags.slice(0, 2)
   const moreTags = image.tags.length - visibleTags.length
@@ -46,15 +48,24 @@ function CardInfoFooter({ image }: { image: ImageItem }) {
       )}
     </div>
   )
-}
+})
 
-function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: (e: React.MouseEvent, image: ImageItem) => void }) {
+/** 缩略图卡片（memo：虚拟滚动下 scrollTop 每帧变化，仅 image/回调引用变化时才重渲染） */
+const ImageCard = React.memo(function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: (e: React.MouseEvent, image: ImageItem) => void }) {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const openLightbox = useUIStore((s) => s.openLightbox)
   const openWallpaperDialog = useUIStore((s) => s.openWallpaperDialog)
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selected = useUIStore((s) => s.selectedIds.includes(image.id))
   const toggleSelected = useUIStore((s) => s.toggleSelected)
+  // 缩略图重试定时器：虚拟化下卡片频繁卸载，需清理避免定时器泄漏
+  const retryTimerRef = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current)
+    },
+    []
+  )
 
   return (
     <div
@@ -93,13 +104,14 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           onError={(e) => {
-            // 缩略图尚未生成：1.2s 后重试一次（导入大文件夹时常见）
+            // 缩略图尚未生成：延迟后重试一次（导入大文件夹时常见）
             const el = e.currentTarget
             if (!el.dataset.retried) {
               el.dataset.retried = '1'
-              setTimeout(() => {
+              retryTimerRef.current = window.setTimeout(() => {
+                retryTimerRef.current = null
                 el.src = `${mediaUrl('thumb', image.id)}?r=${Date.now()}`
-              }, 1200)
+              }, THUMBNAIL_RETRY_DELAY_MS)
             }
           }}
         />
@@ -170,7 +182,7 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
       <CardInfoFooter image={image} />
     </div>
   )
-}
+})
 
 /** 图片右键菜单（设为壁纸 / 收藏 / 裁剪 / 重命名 / 删除 / 归类 / 标签）
  *  批量选择模式下右键"已选中"的图片时，分类 / 标签 / 删除 / 收藏对整个选中集生效 */
@@ -203,7 +215,6 @@ function CardContextMenu({
   const toast = useUIStore((s) => s.toast)
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selectedIds = useUIStore((s) => s.selectedIds)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [newTag, setNewTag] = useState('')
 
   // 右键的图片在选中集合内 → 分类/标签/删除/收藏批量作用于全部选中
@@ -489,10 +500,8 @@ function BatchActionBar({
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectedIds = useUIStore((s) => s.setSelectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
-  const clearSelection = useUIStore((s) => s.clearSelection)
   const images = useLibraryStore(selectFilteredImages)
   const toast = useUIStore((s) => s.toast)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   if (selectedIds.length === 0) return null
 
@@ -509,23 +518,11 @@ function BatchActionBar({
         {allFilteredSelected ? '取消全选' : '全选当前筛选'}
       </button>
       <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
-      <button
-        className="btn-ghost !py-1 text-xs"
-        onClick={() => {
-          onOpenCategoryPicker()
-          setConfirmDelete(false)
-        }}
-      >
+      <button className="btn-ghost !py-1 text-xs" onClick={onOpenCategoryPicker}>
         <FolderInput size={13} />
         设置分类…
       </button>
-      <button
-        className="btn-ghost !py-1 text-xs"
-        onClick={() => {
-          onOpenTagPicker()
-          setConfirmDelete(false)
-        }}
-      >
+      <button className="btn-ghost !py-1 text-xs" onClick={onOpenTagPicker}>
         <TagIcon size={13} />
         加标签…
       </button>
@@ -535,13 +532,7 @@ function BatchActionBar({
           {downloading ? '下载中…' : `下载原图(${cloudCount})`}
         </button>
       )}
-      <button
-        className="btn-danger !py-1 text-xs"
-        onClick={() => {
-          setConfirmDelete(false)
-          onDeleteRequest()
-        }}
-      >
+      <button className="btn-danger !py-1 text-xs" onClick={onDeleteRequest}>
         <Trash2 size={13} />
         删除…
       </button>
@@ -564,6 +555,7 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
   const allTags = useLibraryStore((s) => s.tags)
   const setTagsMany = useLibraryStore((s) => s.setTagsMany)
   const toast = useUIStore((s) => s.toast)
+  const pushUndo = useUIStore((s) => s.pushUndo)
   const [picked, setPicked] = useState<string[]>([])
   const [newTags, setNewTags] = useState('')
 
@@ -579,6 +571,11 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
       .filter((i): i is ImageItem => Boolean(i))
       .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, ...additions])) }))
     void setTagsMany(entries).then(() => {
+      // 入撤销栈：Cmd/Ctrl+Z 可重放（与 toast「撤销」按钮共用同一 before 快照；
+      // 键盘路径由快捷键处理器统一提示并刷新库数据）
+      pushUndo(`标签修改（${ids.length} 张）`, async () => {
+        await window.api.applyEntries(before)
+      })
       toast(`已为 ${ids.length} 张添加 ${additions.length} 个标签`, 'success', {
         duration: 8000,
         action: {
@@ -657,6 +654,13 @@ function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => vo
     setBusy(true)
     try {
       await window.api.deleteImages(ids, mode)
+      if (mode === 'all') {
+        // 入撤销栈：Cmd/Ctrl+Z 可从废纸篓恢复（与 toast「撤销」按钮共用同一 restoreImages；
+        // 键盘路径由快捷键处理器统一提示并刷新库数据）
+        pushUndo(`删除 ${ids.length} 张图片`, async () => {
+          await window.api.restoreImages(ids)
+        })
+      }
       toast(
         mode === 'all' ? `已从所有设备删除 ${ids.length} 张` : `已清理 ${ids.length} 张本地副本`,
         'info',
@@ -718,6 +722,7 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
   const images = useLibraryStore((s) => s.images)
   const assignCategoryMany = useLibraryStore((s) => s.assignCategoryMany)
   const toast = useUIStore((s) => s.toast)
+  const pushUndo = useUIStore((s) => s.pushUndo)
   const clearSelection = useUIStore((s) => s.clearSelection)
 
   return (
@@ -735,6 +740,10 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
                   .filter((i): i is ImageItem => Boolean(i))
                   .map((i) => ({ id: i.id, patch: { categoryId: i.categoryId } }))
                 void assignCategoryMany(ids, cat.id).then(() => {
+                  // 入撤销栈：Cmd/Ctrl+Z 可重放（与 toast「撤销」按钮共用同一 before 快照）
+                  pushUndo(`移入「${cat.name}」（${ids.length} 张）`, async () => {
+                    await window.api.applyEntries(before)
+                  })
                   toast(`已将 ${ids.length} 张移入「${cat.name}」`, 'success', {
                     duration: 8000,
                     action: {
@@ -764,6 +773,10 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
                 .filter((i): i is ImageItem => Boolean(i))
                 .map((i) => ({ id: i.id, patch: { categoryId: i.categoryId } }))
               void assignCategoryMany(ids, null).then(() => {
+                // 入撤销栈：Cmd/Ctrl+Z 可重放（与 toast「撤销」按钮共用同一 before 快照）
+                pushUndo(`移出分类（${ids.length} 张）`, async () => {
+                  await window.api.applyEntries(before)
+                })
                 toast(`已将 ${ids.length} 张移出分类`, 'info', {
                   duration: 8000,
                   action: {
@@ -809,7 +822,12 @@ export function GalleryGrid(): JSX.Element {
   const [deleteRequestIds, setDeleteRequestIds] = useState<string[] | null>(null)
   const [bulkDownloading, setBulkDownloading] = useState(false)
   const allImages = useLibraryStore((s) => s.images)
-  const cloudCount = useUIStore((s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length)
+  // useMemo + Map：仅在选中集/图片列表变化时计算一次，
+  // 替代原选择器内 O(选中数 × 全部图片) 的 .find（语义不变：查不到记录同样视为云端）
+  const cloudCount = useMemo(() => {
+    const localFileById = new Map(allImages.map((img) => [img.id, img.localFile] as const))
+    return selectedIds.filter((id) => !localFileById.get(id)).length
+  }, [allImages, selectedIds])
 
   /** 批量下载选中图片的云端原图（支持取消） */
   const downloadSelected = async (): Promise<void> => {
@@ -891,11 +909,12 @@ export function GalleryGrid(): JSX.Element {
     }
   }, [])
 
-  const openMenu = (e: React.MouseEvent, image: ImageItem): void => {
+  // useCallback 稳定引用：配合 React.memo 的 ImageCard，滚动时不触发全部卡片重渲染
+  const openMenu = useCallback((e: React.MouseEvent, image: ImageItem): void => {
     e.preventDefault()
     e.stopPropagation()
     setMenu({ x: e.clientX, y: e.clientY, image })
-  }
+  }, [])
 
   if (loaded && images.length === 0) {
     return (
@@ -939,10 +958,8 @@ export function GalleryGrid(): JSX.Element {
     <div ref={scrollRef} className="h-full overflow-y-auto p-4 pb-24">
       {/* 上下 spacer 撑起总高度，保持滚动条与位置稳定 */}
       <div style={{ height: Math.max(0, firstRow) * (rowH + GAP) }} />
-      <div
-        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
-      >
+      {/* 列数由内联 gridTemplateColumns 按容器实测宽度计算（与上方 cols 断点一致），无需响应式类 */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {shown.map((image) => (
           <ImageCard key={image.id} image={image} onContextMenu={openMenu} />
         ))}

@@ -35,6 +35,30 @@ export function sanitizeFileName(name: string): string {
   return cleaned.length ? cleaned.slice(0, 200) : '未命名'
 }
 
+/**
+ * ID 片段安全化（C1）：仅保留 [0-9A-Za-z-]，截断至 64 字符。
+ * 本地 genId() 产出 ^[0-9a-z]+$ 为其子集，合法 id 原样通过；
+ * 云端恶意 id（如 ../../xxx）被中和为安全片段。
+ * 注意 `_` 也被映射为 `-`：下游派生名（缓存 `id_hash`、暂存 `id_文件名`）
+ * 都以 `_` 作分隔符，id 段不含 `_` 才能保证前缀匹配无歧义。
+ */
+export function sanitizeIdSegment(id: string): string {
+  const cleaned = String(id).replace(/[^0-9A-Za-z-]/g, '-').slice(0, 64)
+  return cleaned.length ? cleaned : '-'
+}
+
+/**
+ * 路径包含断言（C1/H4）：确认 target 位于 root 之内，否则抛错。
+ * 所有以外部可控输入（云端 id/hash/fileName）拼接的写入路径必须先过此断言。
+ */
+export function assertInside(root: string, target: string): string {
+  const rel = path.relative(path.resolve(root), path.resolve(target))
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`路径越界拒绝写入: ${path.basename(target)}`)
+  }
+  return target
+}
+
 /** 带扩展名拆分 */
 export function splitFileName(fileName: string): { base: string; ext: string } {
   const idx = fileName.lastIndexOf('.')

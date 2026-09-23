@@ -5,8 +5,11 @@
  * - 随机模式：对素材池洗牌成队列依次播放，播完重洗（避免连续重复）
  * - 顺序模式：按加入时间顺序循环，进度持久化（重启续播）
  * - 每次切换成功后写入壁纸历史，并推送事件到渲染层（托盘气泡提示）
+ * - 单屏连续失败按指数退避，素材池为空按固定节奏温和重试（避免拔屏等场景的重试风暴）
+ * - 显示器热插拔感知：接屏/拔屏（防抖合并）后清空退避状态并重排调度
+ * - 独立模式跨屏去重：避开一个周期窗口内其他屏刚应用过的照片，并错开各屏首次切换
  */
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import fs from 'node:fs'
 import { IPC_EVENTS } from '@shared/ipc'
 import type { SlideshowConfig } from '@shared/types'
@@ -35,12 +38,38 @@ const DEFAULT_CONFIG: SlideshowConfig = {
 
 const slideshowStore = new JsonStore<SlideshowConfig>('slideshow', DEFAULT_CONFIG)
 
+/** 常规调度的最小延迟：周期已过期时尽快（该延迟后）执行 */
+const MIN_APPLY_DELAY_MS = 3_000
+/** 失败退避的基础延迟：首次失败后此时长重试 */
+const BACKOFF_BASE_MS = 3_000
+/** 失败退避的增长倍数：每连续失败一次 ×2 */
+const BACKOFF_MULTIPLIER = 2
+/** 退避上限因子：退避延迟不超过 max(该屏周期, 此值) */
+const BACKOFF_CAP_MS = 60_000
+/** 素材池为空时的重试间隔：用户可能随时导入图片，不退避、固定温和节奏 */
+const EMPTY_POOL_RETRY_MS = 30_000
+/** 显示器热插拔事件的防抖延迟：合并分辨率变化等事件风暴为一次重排 */
+const DISPLAY_EVENT_DEBOUNCE_MS = 500
+/** 跨屏去重窗口的容量上限：超出时按插入序淘汰最旧记录 */
+const RECENT_APPLIED_CAP = 64
+
 let timer: NodeJS.Timeout | null = null
 /** 独立模式每屏各自的定时器 */
 const monitorTimers = new Map<string, NodeJS.Timeout>()
 let running = false
 /** 随机模式的洗牌队列（图片 ID；独立模式下按显示器各一份，'' 键 = 共享队列） */
 const shuffleQueues = new Map<string, string[]>()
+/** 每屏连续失败次数（指数退避依据；成功后清零，仅内存态不持久化） */
+const monitorFailures = new Map<string, number>()
+/** 跨屏去重窗口：图片 ID -> 应用它的屏与时间（读取时顺带清理过期项） */
+const recentApplied = new Map<string, { monitorId: string; at: number }>()
+/** 显示器热插拔监听是否已注册（防止重复 init 造成双重绑定） */
+let screenEventsBound = false
+/** 热插拔防抖定时器 */
+let screenEventTimer: NodeJS.Timeout | null = null
+
+/** 单屏一次切换的结果（调度器据此决定下一次延迟策略） */
+type TickOutcome = 'applied' | 'empty-pool' | 'failed' | 'skipped'
 
 export function getSlideshowConfig(): SlideshowConfig {
   return slideshowStore.get()
@@ -162,18 +191,48 @@ function prefetchNext(pool: string[], config: SlideshowConfig, cursorKey: string
   }
 }
 
-/** 单屏切换（独立模式每屏各自的 tick） */
-async function tickMonitor(monitorId: string, manual = false): Promise<void> {
+/** 记录某屏刚应用过的图（跨屏去重窗口；超容量时按插入序近似淘汰最旧项） */
+function rememberRecentApply(imageId: string, monitorId: string): void {
+  recentApplied.set(imageId, { monitorId, at: Date.now() })
+  while (recentApplied.size > RECENT_APPLIED_CAP) {
+    const oldest = recentApplied.keys().next()
+    if (oldest.done === true) break
+    recentApplied.delete(oldest.value)
+  }
+}
+
+/** 构造某屏的排除集合：窗口（本屏一个周期）内其他屏最近应用过的图，避免同图重复上墙 */
+function buildRecentExcludeIds(monitorId: string, windowMs: number): Set<string> {
+  const now = Date.now()
+  const exclude = new Set<string>()
+  for (const [imageId, rec] of recentApplied) {
+    if (now - rec.at >= windowMs) {
+      // 过期项顺带淘汰，控制内存占用
+      recentApplied.delete(imageId)
+      continue
+    }
+    if (rec.monitorId !== monitorId) exclude.add(imageId)
+  }
+  return exclude
+}
+
+/** 单屏切换（独立模式每屏各自的 tick）；返回结果供调度器决定下一次延迟 */
+async function tickMonitor(monitorId: string, manual = false): Promise<TickOutcome> {
+  // 每次读取最新持久化配置：用户关闭总开关后，已排定的定时器不得再多切一次
   const config = getSlideshowConfig()
+  if (!config.enabled && !manual) return 'skipped'
   const eff = effectiveConfig(config, monitorId)
-  if (eff.disabled) return
-  const pool = computePool(eff)
-  if (pool.length === 0) return
+  if (eff.disabled) return 'skipped'
   try {
-    const imageId = nextImageId(pool, eff, monitorId)
-    if (!imageId) return
+    const pool = computePool(eff)
+    if (pool.length === 0) return 'empty-pool'
+    // 跨屏去重：避开其他屏最近一个周期内已应用的图；
+    // 池太小（去重集覆盖整池）时放弃去重保证有图可出，否则随机路径会返回 null
+    const excludeIds = buildRecentExcludeIds(monitorId, intervalMs(eff))
+    const imageId = nextImageId(pool, eff, monitorId, excludeIds.size < pool.length ? excludeIds : new Set<string>())
+    if (!imageId) return 'failed'
     const image = getLibrary().images.find((img) => img.id === imageId)
-    if (!image) return
+    if (!image) return 'failed'
     let filePath = image.path
     if (!image.localFile || !fs.existsSync(image.path)) {
       filePath = await ensureLocal(image.id)
@@ -181,15 +240,21 @@ async function tickMonitor(monitorId: string, manual = false): Promise<void> {
     const result = await applyWallpaper(filePath, [monitorId], eff.fillMode)
     const entry = recordApply(imageId, result.applied, eff.fillMode)
     slideshowStore.set({ lastAppliedAtByMonitor: { ...slideshowStore.get().lastAppliedAtByMonitor, [monitorId]: Date.now() } })
+    rememberRecentApply(imageId, monitorId)
     broadcast(IPC_EVENTS.SLIDESHOW_TICK, { entry, entries: [entry], manual })
     prefetchNext(pool, eff, monitorId)
+    return 'applied'
   } catch (err) {
     console.error(`[slideshow] 显示器 ${monitorId} 切换失败:`, err)
+    return 'failed'
   }
 }
 
-/** 为单屏排下一次切换（独立模式） */
-function scheduleMonitor(monitorId: string, delayMs?: number): void {
+/**
+ * 为单屏排下一次切换（独立模式）
+ * @param staggerMs 错峰偏移：叠加到计算出的延迟上，避免多屏同一时刻触发原生调用
+ */
+function scheduleMonitor(monitorId: string, delayMs?: number, staggerMs = 0): void {
   const config = getSlideshowConfig()
   const eff = effectiveConfig(config, monitorId)
   if (!config.enabled || eff.disabled) {
@@ -202,15 +267,54 @@ function scheduleMonitor(monitorId: string, delayMs?: number): void {
   if (old) clearTimeout(old)
   let delay = delayMs
   if (delay === undefined) {
+    // 重启续播：上次切换时间 + 周期 - 现在；已过期则尽快执行
     const interval = intervalMs(eff)
     const last = slideshowStore.get().lastAppliedAtByMonitor?.[monitorId] ?? 0
-    delay = Math.max(3000, last + interval - Date.now())
+    delay = Math.max(MIN_APPLY_DELAY_MS, last + interval - Date.now())
   }
+  delay += staggerMs
   const t = setTimeout(() => {
-    void tickMonitor(monitorId).then(() => scheduleMonitor(monitorId))
+    void tickMonitor(monitorId).then((outcome) => rescheduleMonitor(monitorId, outcome))
   }, delay)
   t.unref?.()
   monitorTimers.set(monitorId, t)
+}
+
+/**
+ * 一次切换后依据结果重排（独立模式）：
+ * - 成功：清零失败计数，按常规周期调度
+ * - 池空：不计失败，按固定温和节奏重试（用户可能随时导入图片）
+ * - 失败：指数退避（3s 起、每次 ×2、封顶 max(周期, 60s)），
+ *   避免拔屏等场景每轮 computePool + 原生子进程调用的无退避重试风暴
+ */
+function rescheduleMonitor(monitorId: string, outcome: TickOutcome): void {
+  const config = getSlideshowConfig()
+  const eff = effectiveConfig(config, monitorId)
+  // 总开关或该屏已关闭：scheduleMonitor 内部会清掉该屏定时器
+  if (!config.enabled || eff.disabled) {
+    scheduleMonitor(monitorId)
+    return
+  }
+  switch (outcome) {
+    case 'applied':
+      monitorFailures.delete(monitorId)
+      scheduleMonitor(monitorId)
+      return
+    case 'skipped':
+      scheduleMonitor(monitorId)
+      return
+    case 'empty-pool':
+      scheduleMonitor(monitorId, EMPTY_POOL_RETRY_MS)
+      return
+    case 'failed': {
+      const failures = (monitorFailures.get(monitorId) ?? 0) + 1
+      monitorFailures.set(monitorId, failures)
+      const cap = Math.max(intervalMs(eff), BACKOFF_CAP_MS)
+      const backoff = Math.min(BACKOFF_BASE_MS * BACKOFF_MULTIPLIER ** (failures - 1), cap)
+      scheduleMonitor(monitorId, backoff)
+      return
+    }
+  }
 }
 
 /** 清空每屏定时器 */
@@ -225,6 +329,8 @@ async function tick(manual = false): Promise<void> {
   running = true
   try {
     const config = getSlideshowConfig()
+    // 读取最新持久化配置：关闭总开关后已排定的定时器不得再多切一次（手动触发除外）
+    if (!config.enabled && !manual) return
     const pool = computePool(config)
     if (pool.length === 0) return
 
@@ -279,10 +385,10 @@ function scheduleShared(delayMs?: number): void {
   if (!config.enabled) return
   let delay = delayMs
   if (delay === undefined) {
-    // 重启续播：上次切换时间 + 周期 - 现在；已过期则尽快（3s 后）执行
+    // 重启续播：上次切换时间 + 周期 - 现在；已过期则尽快执行
     const interval = intervalMs(config)
     const last = config.lastAppliedAt ?? 0
-    delay = Math.max(3000, last + interval - Date.now())
+    delay = Math.max(MIN_APPLY_DELAY_MS, last + interval - Date.now())
   }
   timer = setTimeout(() => {
     // 等待本次切换完成后再调度（用最新的 lastAppliedAt 计算间隔），
@@ -307,7 +413,12 @@ function schedule(delayMs?: number): void {
         const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
         // 至少两屏才有独立意义；单屏退回共享路径
         if (targets.length > 1) {
-          for (const m of targets) scheduleMonitor(m, delayMs)
+          // 错峰：按屏索引把首次切换平移 周期/屏数 的份额，
+          // 避免所有屏同一时刻触发（N 个原生子进程 + N 次 sharp 预渲染并发）
+          targets.forEach((m, i) => {
+            const stagger = Math.round((i * intervalMs(effectiveConfig(config, m))) / targets.length)
+            scheduleMonitor(m, delayMs, stagger)
+          })
         } else {
           scheduleShared(delayMs)
         }
@@ -323,13 +434,9 @@ export function setSlideshowConfig(patch: Partial<SlideshowConfig>): SlideshowCo
   slideshowStore.set(patch)
   slideshowStore.flush()
   const config = getSlideshowConfig()
-  if (config.enabled) {
-    // 开启或参数变化：立即重排（保留 lastAppliedAt 基准）
-    schedule()
-  } else if (timer) {
-    clearTimeout(timer)
-    timer = null
-  }
+  // 统一走 schedule()：内部先清共享 timer 与全部 monitorTimers，关闭时直接 no-op，
+  // 保证关闭轮播后每屏定时器一并停止（此前只清共享 timer，各屏还会再多切一次）
+  schedule()
   broadcast(IPC_EVENTS.SLIDESHOW_CHANGED, config)
   return config
 }
@@ -342,8 +449,10 @@ export async function nextSlideshowNow(): Promise<void> {
     const alive = mons.map((m) => m.id)
     const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
     if (targets.length > 1) {
-      for (const m of targets) await tickMonitor(m, true)
-      if (config.enabled) for (const m of targets) scheduleMonitor(m)
+      // 并行切换各屏（游标彼此独立、store 按屏原子写入，且 tickMonitor 内部已捕获异常不会 reject），
+      // 避免逐屏串行等待各自的下载 + 预渲染
+      await Promise.all(targets.map((m) => tickMonitor(m, true)))
+      if (getSlideshowConfig().enabled) for (const m of targets) scheduleMonitor(m)
       return
     }
   }
@@ -351,9 +460,32 @@ export async function nextSlideshowNow(): Promise<void> {
   if (getSlideshowConfig().enabled) schedule()
 }
 
+/** 显示器拓扑变化（接屏/拔屏）：清空退避状态并防抖重排，避免事件风暴下反复调度 */
+function onDisplayTopologyChanged(): void {
+  if (screenEventTimer) clearTimeout(screenEventTimer)
+  screenEventTimer = setTimeout(() => {
+    screenEventTimer = null
+    // 显示器集合已变化：旧屏的失败计数不再有意义，全部清空后重新枚举调度
+    monitorFailures.clear()
+    schedule()
+  }, DISPLAY_EVENT_DEBOUNCE_MS)
+  screenEventTimer.unref?.()
+}
+
+/** 注册显示器热插拔监听（幂等：重复 init 不会双重绑定） */
+function bindScreenEvents(): void {
+  if (screenEventsBound) return
+  screenEventsBound = true
+  screen.on('display-added', onDisplayTopologyChanged)
+  screen.on('display-removed', onDisplayTopologyChanged)
+}
+
 /** 应用启动时恢复轮播 */
 export function initSlideshow(): void {
   shuffleQueues.clear()
+  monitorFailures.clear()
+  recentApplied.clear()
+  bindScreenEvents()
   if (getSlideshowConfig().enabled) schedule()
 }
 

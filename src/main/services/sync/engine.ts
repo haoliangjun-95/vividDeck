@@ -22,6 +22,8 @@ import type {
 } from '@shared/types'
 import { JsonStore } from '../store'
 import { isRealFile, libraryDir } from '../paths'
+import { assertInside, sanitizeFileName, sanitizeIdSegment } from '../../utils/fs'
+import { runPool } from '../../utils/concurrency'
 import { getLibrary, applySyncMerge, markLocalFile, onLibraryChanged } from '../library'
 import { ensureThumb, thumbPath } from '../thumbnails'
 import { getDeviceId } from '../device'
@@ -72,22 +74,42 @@ function progress(p: SyncProgress): void {
   broadcast(IPC_EVENTS.SYNC_PROGRESS, p)
 }
 
+/**
+ * H13：已上传哈希改内存 Set 惰性加载。
+ * 旧实现每张图上传后 Array.includes（O(u)）+ engineStore.set 重写整个数组
+ * （首次同步 5000 张 ≈ 1250 万次比较 + 5000 次全量重写 sync-state.json）；
+ * 现在仅在同步结束时落盘一次。
+ */
+let uploadedSet: Set<string> | null = null
+let uploadedDirty = false
+
 function getUploadedSet(): Set<string> {
-  return new Set(engineStore.get().uploadedHashes)
+  if (uploadedSet === null) uploadedSet = new Set(engineStore.get().uploadedHashes)
+  return uploadedSet
 }
 
 /** 清空"已上传哈希"缓存：切换同步目标（地址/端口/bucket/账号）后调用，
  *  否则旧桶的缓存会导致新桶漏传原图 */
 export function resetUploadCache(): void {
+  uploadedSet = new Set()
+  uploadedDirty = false
   engineStore.set({ uploadedHashes: [] })
   engineStore.flush()
 }
 
 function markUploaded(hash: string): void {
-  const state = engineStore.get()
-  if (!state.uploadedHashes.includes(hash)) {
-    engineStore.set({ uploadedHashes: [...state.uploadedHashes, hash] })
+  const set = getUploadedSet()
+  if (!set.has(hash)) {
+    set.add(hash)
+    uploadedDirty = true
   }
+}
+
+/** 把内存 Set 写回 store（syncNow finally 与退出 flushSyncEngine 各调用一次） */
+function persistUploadedHashes(): void {
+  if (uploadedSet === null || !uploadedDirty) return
+  engineStore.set({ uploadedHashes: [...uploadedSet] })
+  uploadedDirty = false
 }
 
 function isConfigured(): boolean {
@@ -122,18 +144,6 @@ export function getStatus(): SyncStatus {
     lastResult: engineStore.get().lastResult,
     cloudOnlyCount: getLibrary().images.filter((img) => !img.localFile).length
   }
-}
-
-/** 并发执行（简单池） */
-async function runPool<T>(items: T[], limit: number, fn: (item: T, index: number) => Promise<void>): Promise<void> {
-  let index = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (index < items.length) {
-      const i = index++
-      await fn(items[i], i)
-    }
-  })
-  await Promise.all(workers)
 }
 
 /** 完整同步（互斥） */
@@ -270,6 +280,7 @@ export async function syncNow(): Promise<SyncResultStats> {
     throw err
   } finally {
     running = false
+    persistUploadedHashes()
     engineStore.flush()
   }
 }
@@ -284,6 +295,17 @@ export async function testConnection(): Promise<{ ok: true; bucketCreated: boole
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/**
+ * 按需下载落点（C1）：云端记录的 id/fileName 均不可信 ——
+ * 旧实现 id.slice(-6) 未净化（"../../" 恰好 6 字符可穿越），fileName 只做了字符替换。
+ * 统一净化派生 + assertInside 断言，下载与失败清理两处共用同一路径。
+ */
+function downloadTargetPath(image: ImageItem): string {
+  const dir = libraryDir()
+  const safeName = `${sanitizeIdSegment(image.id).slice(-6)}_${sanitizeFileName(image.fileName)}`
+  return assertInside(dir, path.join(dir, safeName))
 }
 
 /**
@@ -302,9 +324,8 @@ export async function ensureLocal(imageId: string): Promise<string> {
   if (existing) return existing
 
   const task = (async (): Promise<string> => {
-    // 下载到媒体库（文件名冲突以 id 前缀规避）
-    const safeName = `${image.id.slice(-6)}_${image.fileName.replace(/[/\\:*?"<>|]/g, '_')}`
-    const target = path.join(libraryDir(), safeName)
+    // 下载到媒体库（文件名冲突以 id 前缀规避；净化 + 断言见 downloadTargetPath）
+    const target = downloadTargetPath(image)
     await client.downloadFile(made.client, made.cfg.bucket, `objects/${image.hash}`, target)
     // 顺带补缩略图
     try {
@@ -323,9 +344,8 @@ export async function ensureLocal(imageId: string): Promise<string> {
     return await task
   } catch (err) {
     inflightDownloads.delete(imageId)
-    // 清理半成品文件
-    const safeName = `${image.id.slice(-6)}_${image.fileName.replace(/[/\\:*?"<>|]/g, '_')}`
-    await fsp.unlink(path.join(libraryDir(), safeName)).catch(() => undefined)
+    // 清理半成品文件（与下载落点同一派生逻辑）
+    await fsp.unlink(downloadTargetPath(image)).catch(() => undefined)
     throw err
   }
 }
@@ -382,5 +402,8 @@ export function initSyncEngine(): void {
 }
 
 export function flushSyncEngine(): void {
+  // 同步进行中退出时，本轮已上传标记只存在于内存 Set —— 先写回再落盘，
+  // 否则下次同步重复上传（syncNow 的 finally 在进程退出路径不保证执行）
+  persistUploadedHashes()
   engineStore.flush()
 }

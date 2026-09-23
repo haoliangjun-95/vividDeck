@@ -20,7 +20,7 @@ import {
   type LibraryData
 } from '@shared/types'
 import { JsonStore } from './store'
-import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } from '../utils/fs'
+import { assertInside, collectImageFiles, genId, hashFile, sanitizeFileName, sanitizeIdSegment, splitFileName } from '../utils/fs'
 import { isRealFile, libraryDir, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
@@ -30,12 +30,17 @@ import { addTombstone, removeTombstones } from './tombstones'
 import type { SyncImageRecord } from '@shared/types'
 
 // ---------- 持久化 ----------
-const libraryStore = new JsonStore<LibraryData>('library', {
-  images: [],
-  categories: [],
-  tags: [],
-  albums: []
-})
+// C2：library.json 体积大（5000 图 ≈ 数 MB），用紧凑格式减少一半写盘量
+const libraryStore = new JsonStore<LibraryData>(
+  'library',
+  {
+    images: [],
+    categories: [],
+    tags: [],
+    albums: []
+  },
+  { pretty: false }
+)
 
 /** 素材库变化监听（同步引擎注册，用于防抖触发增量同步） */
 const changeListeners = new Set<() => void>()
@@ -185,7 +190,12 @@ export function getLibrary(): LibraryData {
   return libraryStore.get()
 }
 
-/** 保存并返回最新数据（标签列表从图片自动归并） */
+/**
+ * 保存并返回最新数据（标签列表从图片自动归并）。
+ * C2：落盘走防抖 scheduleSave（300ms 合并）而非同步 flush ——
+ * 逐图 commit 的批量操作（导入/下载回填/恢复）不再每次全量重写文件；
+ * 退出与迁移路径仍由 flushLibrary() 强制落盘。
+ */
 function commit(mutator: (data: LibraryData) => void): LibraryData {
   const data = libraryStore.get()
   mutator(data)
@@ -193,7 +203,7 @@ function commit(mutator: (data: LibraryData) => void): LibraryData {
   data.tags = Array.from(new Set(data.images.flatMap((img) => img.tags))).sort((a, b) =>
     a.localeCompare(b, 'zh-CN')
   )
-  libraryStore.flush()
+  libraryStore.save()
   notifyChanged()
   return { ...data }
 }
@@ -328,21 +338,13 @@ export function renameImage(id: string, newFileName: string): LibraryData {
 }
 
 /**
- * 删除图片记录：
- * - 复制模式：库内文件移入系统废纸篓（可恢复）
- * - 引用模式：仅移除记录，不删除用户磁盘上的原文件
- * - 写入墓碑，经同步传播到其他设备
+ * 删除单张图片：委托批量路径（H9）。
+ * 旧实现用 path !== sourcePath 启发式判断复制模式 —— 同步合并/自愈后
+ * 复制记录的 sourcePath 已归一化为库路径，原图永不进回收站（孤儿文件），
+ * 且绕过 staging 无法撤销。批量路径以 isLibraryFile 判断，行为正确。
  */
 export async function deleteImage(id: string): Promise<LibraryData> {
-  const image = getLibrary().images.find((img) => img.id === id)
-  if (image && image.path !== image.sourcePath) {
-    await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
-  }
-  purgeCache(id)
-  addTombstone(id, 'image')
-  return commit((data) => {
-    data.images = data.images.filter((img) => img.id !== id)
-  })
+  return deleteImages([id], 'all')
 }
 
 /** 更新图片属性（收藏 / 分类 / 标签） */
@@ -398,7 +400,12 @@ function isLibraryFile(filePath: string): boolean {
 async function moveToStaging(image: ImageItem): Promise<string | null> {
   if (!isLibraryFile(image.path)) return null
   if (!isRealFile(image.path)) return null
-  const staged = path.join(trashStagingDir(), `${image.id}_${path.basename(image.path)}`)
+  // H4/C1：id 与文件名均净化后再拼接，并断言落点在暂存区内
+  const staging = trashStagingDir()
+  const staged = assertInside(
+    staging,
+    path.join(staging, `${sanitizeIdSegment(image.id)}_${sanitizeFileName(path.basename(image.path))}`)
+  )
   await fsp.rename(image.path, staged).catch(async (err) => {
     console.error('[library] 移入暂存区失败（跨卷回退复制）:', err)
     await fsp.copyFile(image.path, staged).catch(() => undefined)
@@ -455,45 +462,46 @@ export function applyEntries(entries: { id: string; patch: Pick<ImageItem, 'favo
  * 仅当次会话有效（退出时暂存区已清空则不可恢复，返回恢复成功数）。
  */
 export async function restoreImages(ids: string[]): Promise<{ restored: number }> {
-  const idSet = new Set(ids)
-  // 1) 文件从暂存区移回媒体库
-  let restored = 0
   const staging = trashStagingDir()
+  const libDir = libraryDir()
   let staged: string[] = []
   try {
     staged = await fsp.readdir(staging)
   } catch {
     staged = []
   }
+  // 阶段一：文件从暂存区移回媒体库（id 净化匹配 + 落点断言，C1/H4）
+  const restoredPaths = new Map<string, string>()
   for (const id of ids) {
-    const prefix = `${id}_`
+    const prefix = `${sanitizeIdSegment(id)}_`
     const hit = staged.find((n) => n.startsWith(prefix))
     if (!hit) continue
-    const back = path.join(libraryDir(), hit.slice(prefix.length))
     try {
+      const back = assertInside(libDir, path.join(libDir, sanitizeFileName(hit.slice(prefix.length))))
       await fsp.rename(path.join(staging, hit), back)
-      // 2) 恢复记录（含文件路径）并撤销墓碑
-      const rec = recentDeletedRecords.get(id)
-      commit((data) => {
-        if (data.images.some((i) => i.id === id)) {
-          const t = data.images.find((i) => i.id === id)
-          if (t) {
-            t.path = back
-            t.sourcePath = back
-            t.localFile = true
-          }
-        } else if (rec) {
-          data.images.push({ ...rec, path: back, sourcePath: back, localFile: true })
-        }
-      })
-      removeTombstones([id])
-      recentDeletedRecords.delete(id)
-      restored++
+      restoredPaths.set(id, back)
     } catch (err) {
       console.error(`[library] 恢复 ${id} 失败:`, err)
     }
   }
-  return { restored }
+  if (restoredPaths.size === 0) return { restored: 0 }
+  // 阶段二：单次 commit 恢复全部记录（C2：不再逐 id 全量落盘）+ 撤销墓碑
+  commit((data) => {
+    for (const [id, back] of restoredPaths) {
+      const existing = data.images.find((i) => i.id === id)
+      if (existing) {
+        existing.path = back
+        existing.sourcePath = back
+        existing.localFile = true
+      } else {
+        const rec = recentDeletedRecords.get(id)
+        if (rec) data.images.push({ ...rec, path: back, sourcePath: back, localFile: true })
+      }
+    }
+  })
+  removeTombstones([...restoredPaths.keys()])
+  for (const id of restoredPaths.keys()) recentDeletedRecords.delete(id)
+  return { restored: restoredPaths.size }
 }
 
 /** 删除时留存的记录快照（撤销恢复用；仅内存，当次会话有效） */
@@ -656,6 +664,23 @@ export function markLocalFile(id: string, filePath: string): void {
       target.sourcePath = filePath
       target.localFile = true
       // 仅回填文件路径，不更新 updatedAt（避免覆盖远端元数据的时间戳）
+    }
+  })
+}
+
+/**
+ * 体检修复：把确认断链的记录标记为云端（health.ts 调用）。
+ * 走 commit 统一入口 —— 广播 LIBRARY_CHANGED、防抖落盘、不再原地改库。
+ * 内置 isRealFile 复核：仅处理"确实断链"的记录，误报 id 不会破坏正常记录。
+ */
+export function markCloudOnly(ids: string[]): LibraryData {
+  const idSet = new Set(ids)
+  return commit((data) => {
+    for (const img of data.images) {
+      if (idSet.has(img.id) && img.localFile && !isRealFile(img.path)) {
+        img.localFile = false
+        img.path = ''
+      }
     }
   })
 }

@@ -192,13 +192,20 @@ app.whenReady().then(() => {
 
   // media:// 协议处理：仅允许按图片 ID 访问素材库，杜绝任意文件读取
   protocol.handle('media', async (request) => {
-    // 形如 media://thumb/<imageId>
-    const match = /^media:\/\/(thumb|preview|original)\/([\w-]+)(?:\?.*)?$/.exec(request.url)
-    if (!match) return new Response('Not Found', { status: 404 })
-    const filePath = await resolveMediaPath(match[1] as 'thumb' | 'preview' | 'original', match[2])
-    if (!filePath) return new Response('Not Found', { status: 404 })
-    // pathToFileURL 正确处理中文/空格/特殊字符；net.fetch 返回带 MIME 的流式响应
-    return net.fetch(pathToFileURL(filePath).toString())
+    try {
+      // 形如 media://thumb/<imageId>
+      const match = /^media:\/\/(thumb|preview|original)\/([\w-]+)(?:\?.*)?$/.exec(request.url)
+      if (!match) return new Response('Not Found', { status: 404 })
+      const filePath = await resolveMediaPath(match[1] as 'thumb' | 'preview' | 'original', match[2])
+      if (!filePath) return new Response('Not Found', { status: 404 })
+      // pathToFileURL 正确处理中文/空格/特殊字符；net.fetch 返回带 MIME 的流式响应
+      return await net.fetch(pathToFileURL(filePath).toString())
+    } catch (err) {
+      // resolveMediaPath/net.fetch 的兜底：协议层 rejection 只会变成无日志的网络错误，
+      // 统一转 404 并记录（如 C1 的 assertInside 路径断言在此类客户端触发）
+      console.error('[media] 协议处理失败:', err)
+      return new Response('Not Found', { status: 404 })
+    }
   })
 
   nativeTheme.themeSource = getSettings().theme
@@ -237,10 +244,44 @@ app.on('before-quit', () => {
 // 托盘常驻：窗口全部关闭不退出应用（由托盘菜单或 Cmd+Q 退出）
 app.on('window-all-closed', () => undefined)
 
-// 外部链接统一交给系统浏览器打开
+/**
+ * H2：外链安全校验。
+ * 旧实现 url.startsWith('http') 会把 http: 明文链接也交给 shell.openExternal；
+ * 只允许解析成功且协议为 https: 的 URL。
+ */
+function isSafeExternalUrl(raw: string): boolean {
+  try {
+    return new URL(raw).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/** 取 URL 的 origin（解析失败返回 null，绝不放行） */
+function originOf(raw: string): string | null {
+  try {
+    return new URL(raw).origin
+  } catch {
+    return null
+  }
+}
+
+// 外部链接统一交给系统浏览器打开；并拦截窗口内跨源导航（H2）
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) void shell.openExternal(url)
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // 旧实现完全没有 will-navigate：渲染页被诱导跳转（<a> 或脚本
+  // location 赋值）可导航到任意远端页面，构成钓鱼面。
+  // 策略：同源放行（dev 热更新/应用内路由），跨源阻止导航，
+  // https 外链转系统浏览器。
+  contents.on('will-navigate', (event, url) => {
+    const current = originOf(contents.getURL())
+    if (current === null) return
+    if (originOf(url) === current) return
+    event.preventDefault()
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
   })
 })

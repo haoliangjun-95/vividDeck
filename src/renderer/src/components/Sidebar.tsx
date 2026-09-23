@@ -254,8 +254,6 @@ export function Sidebar(): JSX.Element {
                 label={album.name}
                 count={images.filter((img) => matchAlbum(img, album)).length}
                 onClick={() => setFilter({ albumId: filter.albumId === album.id ? null : album.id })}
-                onDrop={(imageId) => void assignCategory(imageId, null)}
-                dropLabel="移出分类"
               />
             ))}
           </section>

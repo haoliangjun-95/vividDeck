@@ -9,14 +9,26 @@ import sharp from 'sharp'
 import fs from 'node:fs'
 import path from 'node:path'
 import { previewDir, thumbDir } from './paths'
+import { assertInside, sanitizeIdSegment } from '../utils/fs'
 import type { ImageItem } from '@shared/types'
 
+/**
+ * C1：缓存文件名由净化后的 id/hash 派生。
+ * 云端记录的 id 是不可信输入，直接拼接可构造 ../../ 穿越路径写盘任意位置；
+ * 合法本地 id（^[0-9a-z]+$）净化后原样通过，已有缓存不失效。
+ */
+function cacheBaseName(image: ImageItem): string {
+  return `${sanitizeIdSegment(image.id)}_${sanitizeIdSegment(String(image.hash).slice(0, 8))}`
+}
+
 export function thumbPath(image: ImageItem): string {
-  return path.join(thumbDir(), `${image.id}_${image.hash.slice(0, 8)}.webp`)
+  const dir = thumbDir()
+  return assertInside(dir, path.join(dir, `${cacheBaseName(image)}.webp`))
 }
 
 export function previewPath(image: ImageItem): string {
-  return path.join(previewDir(), `${image.id}_${image.hash.slice(0, 8)}.jpg`)
+  const dir = previewDir()
+  return assertInside(dir, path.join(dir, `${cacheBaseName(image)}.jpg`))
 }
 
 /** 生成缩略图（已存在则直接复用缓存） */
@@ -48,7 +60,7 @@ export function purgeCache(imageId: string): void {
   for (const dir of [thumbDir(), previewDir()]) {
     try {
       for (const name of fs.readdirSync(dir)) {
-        if (name.startsWith(`${imageId}_`)) fs.unlinkSync(path.join(dir, name))
+        if (name.startsWith(`${sanitizeIdSegment(imageId)}_`)) fs.unlinkSync(path.join(dir, name))
       }
     } catch {
       /* 目录不存在则忽略 */

@@ -61,6 +61,9 @@ function readStorageDirSetting(): string {
 
 /** 写入自定义存储目录指针（迁移流程调用；dir 传空则删除指针恢复默认） */
 export function setStorageDirPointer(dir: string): void {
+  // 存储根即将变化 → 失效路径缓存（H11）
+  cachedRoot = null
+  subDirCache.clear()
   const file = path.join(app.getPath('userData'), STORAGE_DIR_POINTER)
   if (!dir) {
     fs.rmSync(file, { force: true })
@@ -134,11 +137,21 @@ function rewriteLibraryPaths(oldPrefix: string, newPrefix: string, root: string)
 // 模块加载即确定存储根（先于所有服务的 JsonStore 构造）
 migrateLegacyLayout()
 
+/**
+ * H11：storageRoot 结果缓存。
+ * 旧实现每次调用都 readFileSync + JSON.parse + existsSync，热循环逐图调用时
+ * 5000 张 ≈ 2.5 万次同步系统调用。存储根只在迁移（setStorageDirPointer）时变化，
+ * 迁移流程负责失效缓存；随后立即自动重启，无长期失效风险。
+ */
+let cachedRoot: string | null = null
+const subDirCache = new Map<string, string>()
+
 /** 当前存储根目录（自定义目录存在则用自定义，否则默认） */
 export function storageRoot(): string {
+  if (cachedRoot !== null) return cachedRoot
   const custom = readStorageDirSetting()
-  if (custom && fs.existsSync(custom)) return custom
-  return defaultRoot()
+  cachedRoot = custom && fs.existsSync(custom) ? custom : defaultRoot()
+  return cachedRoot
 }
 
 /** 是否配置了自定义存储目录（无论其当前是否可用） */
@@ -153,8 +166,11 @@ export function customStorageDirMissing(): boolean {
 }
 
 function sub(name: (typeof SUB_DIRS)[number]): string {
+  const cached = subDirCache.get(name)
+  if (cached !== undefined) return cached
   const dir = path.join(storageRoot(), name)
   fs.mkdirSync(dir, { recursive: true })
+  subDirCache.set(name, dir)
   return dir
 }
 
