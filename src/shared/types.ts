@@ -252,6 +252,21 @@ export interface SyncManifest {
   tombstones: SyncTombstone[]
 }
 
+/** 同步健康检查报告 */
+export interface SyncHealthReport {
+  checkedAt: number
+  /** 桶内多余 objects/（可清理释放空间） */
+  cloudOrphanObjects: string[]
+  /** cloud-only 记录在桶中无二进制（其他设备也未上传） */
+  missingBinaries: { id: string; fileName: string }[]
+  /** localFile=true 但本地文件丢失 */
+  localBroken: { id: string; fileName: string; path: string }[]
+  /** 本地与桶中均无缩略图（画廊首屏受影响） */
+  missingThumbs: { id: string; fileName: string }[]
+  /** 本次清理的过期墓碑数（90 天 TTL） */
+  expiredTombstonesCleaned: string[]
+}
+
 /** 批量下载范围 */
 export interface SyncDownloadScope {
   type: 'all' | 'category' | 'favorite'

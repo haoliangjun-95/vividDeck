@@ -108,6 +108,11 @@ const api = {
   syncDownload: (scope: SyncDownloadScope) => call<{ downloaded: number; failed: number }>(IPC.SYNC_DOWNLOAD, scope),
   syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),
   syncCancelDownload: () => ipcRenderer.invoke(IPC.SYNC_CANCEL_DOWNLOAD) as Promise<{ ok: boolean }>,
+  syncHealthCheck: () => call<import('@shared/types').SyncHealthReport>(IPC.SYNC_HEALTH_CHECK),
+  syncCleanOrphans: (keys: string[]) => call<number>(IPC.SYNC_HEALTH_CLEAN_ORPHANS, { keys }),
+  syncRepairBroken: (ids: string[]) => call<number>(IPC.SYNC_HEALTH_REPAIR_BROKEN, { ids }),
+  syncVerifyIntegrity: () => call<{ id: string; fileName: string }[]>(IPC.SYNC_VERIFY_INTEGRITY),
+  syncDownloadEstimate: () => call<{ count: number; sizeBytes: number }>(IPC.SYNC_DOWNLOAD_ESTIMATE),
 
   // ---------- 悬浮球 ----------
   bubbleMoveBy: (dx: number, dy: number) => {

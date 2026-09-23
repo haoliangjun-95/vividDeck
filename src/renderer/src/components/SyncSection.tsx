@@ -6,7 +6,8 @@ import React, { useEffect, useState } from 'react'
 import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { formatTime } from '../lib/utils'
-import type { SyncConfig, SyncProgress, SyncStatus } from '@shared/types'
+import type { SyncConfig, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
+import { formatBytes } from '../lib/utils'
 
 const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
   connecting: '连接服务…',
@@ -276,17 +277,165 @@ export function SyncSection(): JSX.Element | null {
               </>
             )}
             {busyDownload && (
-              <span className="flex items-center gap-1.5 text-xs text-neutral-400">
-                <Loader2 size={13} className="animate-spin" />
-                批量下载中…
+              <span className="flex items-center gap-2 text-xs text-neutral-400">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 size={13} className="animate-spin" />
+                  批量下载中…
+                </span>
+                <button
+                  className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
+                  onClick={() => {
+                    void window.api.syncCancelDownload().then(() => toast('已发送取消信号，正在停止下载…', 'info'))
+                  }}
+                >
+                  取消
+                </button>
               </span>
             )}
           </div>
           <p className="text-[11px] leading-relaxed text-neutral-400">
             同步内容：图片元数据（分类/标签/收藏/文件名）全量双向同步；图片文件按需下载（查看、设壁纸、轮播时自动拉取），也可上方批量下载离线备用。冲突按"最后修改者胜"自动合并；删除会同步传播到所有设备。
           </p>
+
+          {/* 同步体检 */}
+          <HealthCheckSection />
         </div>
       )}
     </section>
+  )
+}
+
+
+/** 同步体检：三方对账结果 + 修复动作 + 完整性校验 + 下载容量预估 */
+function HealthCheckSection(): JSX.Element | null {
+  const toast = useUIStore((st) => st.toast)
+  const [report, setReport] = useState<SyncHealthReport | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [estimate, setEstimate] = useState<{ count: number; sizeBytes: number } | null>(null)
+
+  const run = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      const r = await window.api.syncHealthCheck()
+      setReport(r)
+      setEstimate(await window.api.syncDownloadEstimate())
+      toast('体检完成')
+    } catch (err) {
+      toast(`体检失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  if (checking === false && report === null && estimate === null) {
+    return (
+      <button className="btn-ghost w-full justify-center border border-neutral-300 text-xs dark:border-neutral-700" onClick={() => void run()}>
+        🔍 同步体检（检查云端孤儿 / 缺失原图 / 本地断链）
+      </button>
+    )
+  }
+
+  const rows: { label: string; count: number; hint: string; action?: { label: string; onClick: () => void } }[] = []
+  if (report) {
+    if (report.cloudOrphanObjects.length > 0) {
+      rows.push({
+        label: '云端孤儿对象',
+        count: report.cloudOrphanObjects.length,
+        hint: '桶内已不需要的 objects（清理释放空间）',
+        action: {
+          label: `清理 ${report.cloudOrphanObjects.length} 个`,
+          onClick: () => {
+            if (!confirm(`删除桶中 ${report.cloudOrphanObjects.length} 个孤儿对象？此操作不可恢复。`)) return
+            void window.api.syncCleanOrphans(report.cloudOrphanObjects).then((n) => {
+              toast(`已清理 ${n} 个孤儿对象`)
+              void run()
+            })
+          }
+        }
+      })
+    }
+    if (report.missingBinaries.length > 0) {
+      rows.push({
+        label: '云端缺失原图',
+        count: report.missingBinaries.length,
+        hint: '这些图片只有元数据，桶中没有文件（需在有原图的设备重新上传）'
+      })
+    }
+    if (report.localBroken.length > 0) {
+      rows.push({
+        label: '本地文件断链',
+        count: report.localBroken.length,
+        hint: '记录标记为本地但文件丢失；可标记回云端后重新下载',
+        action: {
+          label: `修复 ${report.localBroken.length} 条`,
+          onClick: () => {
+            void window.api.syncRepairBroken(report.localBroken.map((b) => b.id)).then((n) => {
+              toast(`已修复 ${n} 条（已标记为云端，点击图片将重新下载）`)
+              void run()
+            })
+          }
+        }
+      })
+    }
+    if (report.missingThumbs.length > 0) {
+      rows.push({ label: '缩略图缺失', count: report.missingThumbs.length, hint: '本地与云端均无缩略图（打开图片后自动补生成）' })
+    }
+    if (report.expiredTombstonesCleaned.length > 0) {
+      rows.push({ label: '已清理过期墓碑', count: report.expiredTombstonesCleaned.length, hint: '90 天 TTL 自动清理' })
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">同步体检</span>
+        <button className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => void run()} disabled={checking}>
+          {checking ? '检查中…' : '重新检查'}
+        </button>
+      </div>
+      {estimate && (
+        <div className="text-[11px] text-neutral-400">
+          云端未下载：<b>{estimate.count}</b> 张（约 {formatBytes(estimate.sizeBytes)}）
+          {estimate.count > 0 && (
+            <>
+              {' · '}
+              <button className="text-indigo-500 hover:underline" onClick={() => window.api.syncCancelDownload()}>
+                取消进行中的下载
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {rows.length === 0 && !checking && <div className="text-[11px] text-emerald-600 dark:text-emerald-400">✓ 一切正常，未发现问题</div>}
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-center justify-between gap-2 text-[11px]">
+          <div className="min-w-0 flex-1">
+            <span className="font-medium text-amber-600 dark:text-amber-400">{r.label} × {r.count}</span>
+            <span className="ml-1 text-neutral-400">{r.hint}</span>
+          </div>
+          {r.action && (
+            <button className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11px]" onClick={r.action.onClick}>
+              {r.action.label}
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        className="btn-ghost w-full justify-center !py-1 text-[11px]"
+        disabled={verifying}
+        onClick={() => {
+          if (!confirm('校验全部本地文件的完整性（内容哈希比对，大库耗时较长）？')) return
+          setVerifying(true)
+          void window.api.syncVerifyIntegrity().then((bad) => {
+            setVerifying(false)
+            if (bad.length === 0) toast('完整性校验通过：全部本地文件与记录一致')
+            else toast(`${bad.length} 个文件内容与记录不符（可能已损坏）：${bad.slice(0, 3).map((b) => b.fileName).join('、')}${bad.length > 3 ? ' 等' : ''}`, 'error')
+          }).catch(() => setVerifying(false))
+        }}
+      >
+        {verifying ? '校验中…' : '校验本地文件完整性（内容哈希比对）'}
+      </button>
+    </div>
   )
 }

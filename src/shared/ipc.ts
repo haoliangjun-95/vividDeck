@@ -52,6 +52,11 @@ export const IPC = {
   SYNC_DOWNLOAD: 'sync:download', // SyncDownloadScope -> { downloaded, failed }
   SYNC_ENSURE_LOCAL: 'sync:ensureLocal', // { imageId } -> { path }（按需下载单张）
   SYNC_CANCEL_DOWNLOAD: 'sync:cancelDownload', // 取消进行中的批量下载
+  SYNC_HEALTH_CHECK: 'sync:healthCheck', // -> SyncHealthReport
+  SYNC_HEALTH_CLEAN_ORPHANS: 'sync:cleanOrphans', // { keys } -> { cleaned }
+  SYNC_HEALTH_REPAIR_BROKEN: 'sync:repairBroken', // { ids } -> { fixed }
+  SYNC_VERIFY_INTEGRITY: 'sync:verifyIntegrity', // -> { id, fileName }[]（进度走 SYNC_PROGRESS）
+  SYNC_DOWNLOAD_ESTIMATE: 'sync:downloadEstimate', // -> { count, sizeBytes }
 
   // ---------- 悬浮球 ----------
   BUBBLE_MOVE_BY: 'bubble:moveBy', // (dx, dy) 拖动位移（on 消息，高频）

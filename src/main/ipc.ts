@@ -1,7 +1,7 @@
 /**
  * IPC 通道注册（全部 invoke handler 集中于此，与 shared/ipc.ts 一一对应）
  */
-import { app, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -36,6 +36,7 @@ import { customStorageDirMissing, dirSize, hasCustomStorageDir, setStorageDirPoi
 import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
 import { resetUploadCache } from './services/sync/engine'
 import { cancelDownload, downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
+import { cleanupOrphanObjects, estimateDownload, repairLocalBroken, runHealthCheck, verifyIntegrity } from './services/sync/health'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
@@ -293,6 +294,20 @@ export function registerIpcHandlers(): void {
     cancelDownload()
     return { ok: true }
   })
+  ipcMain.handle(IPC.SYNC_HEALTH_CHECK, wrap(() => runHealthCheck()))
+  ipcMain.handle(IPC.SYNC_HEALTH_CLEAN_ORPHANS, wrap((payload: { keys: string[] }) => cleanupOrphanObjects(payload.keys)))
+  ipcMain.handle(IPC.SYNC_HEALTH_REPAIR_BROKEN, wrap((payload: { ids: string[] }) => repairLocalBroken(payload.ids)))
+  ipcMain.handle(
+    IPC.SYNC_VERIFY_INTEGRITY,
+    wrap(() =>
+      verifyIntegrity((current, total) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('sync:progress', { phase: 'finalizing', current, total, message: '校验文件完整性…' })
+        }
+      })
+    )
+  )
+  ipcMain.handle(IPC.SYNC_DOWNLOAD_ESTIMATE, wrap(() => estimateDownload()))
 
   // ---------- 轮播 ----------
   ipcMain.handle(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
