@@ -179,19 +179,19 @@ function CardContextMenu({
   x,
   y,
   onClose,
-  onRename
+  onRename,
+  onDeleteRequest
 }: {
   image: ImageItem
   x: number
   y: number
   onClose: () => void
   onRename: (image: ImageItem) => void
+  onDeleteRequest: (ids: string[]) => void
 }) {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const assignCategory = useLibraryStore((s) => s.assignCategory)
   const assignCategoryMany = useLibraryStore((s) => s.assignCategoryMany)
-  const remove = useLibraryStore((s) => s.remove)
-  const removeMany = useLibraryStore((s) => s.removeMany)
   const setTags = useLibraryStore((s) => s.setTags)
   const setTagsMany = useLibraryStore((s) => s.setTagsMany)
   const images = useLibraryStore((s) => s.images)
@@ -325,23 +325,12 @@ function CardContextMenu({
         <button
           className={`${item} !text-red-600 dark:!text-red-400`}
           onClick={() => {
-            if (!confirmDelete) {
-              setConfirmDelete(true)
-              return
-            }
-            if (batchIds) {
-              void removeMany(batchIds).then(() => {
-                toast(`已删除 ${N} 张`, 'info')
-              })
-            } else {
-              void remove(image.id)
-              toast('已删除', 'info')
-            }
+            onDeleteRequest(batchIds ?? [image.id])
             onClose()
           }}
         >
           <Trash2 size={15} />
-          {confirmDelete ? `再点一次确认删除${batchIds ? `（${N} 张）` : ''}` : `删除${batchIds ? `已选 ${N} 张` : ''}`}
+          删除{batchIds ? `已选 ${N} 张` : ''}…
         </button>
 
         {/* 归类快捷区（批量选择时作用于全部选中） */}
@@ -487,20 +476,21 @@ function BatchActionBar({
   onOpenTagPicker,
   onDownloadSelected,
   downloading,
-  cloudCount
+  cloudCount,
+  onDeleteRequest
 }: {
   onOpenCategoryPicker: () => void
   onOpenTagPicker: () => void
   onDownloadSelected: () => void
   downloading: boolean
   cloudCount: number
+  onDeleteRequest: () => void
 }) {
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectedIds = useUIStore((s) => s.setSelectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
   const clearSelection = useUIStore((s) => s.clearSelection)
   const images = useLibraryStore(selectFilteredImages)
-  const removeMany = useLibraryStore((s) => s.removeMany)
   const toast = useUIStore((s) => s.toast)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -546,22 +536,14 @@ function BatchActionBar({
         </button>
       )}
       <button
-        className={`btn !py-1 text-xs ${confirmDelete ? '!bg-red-600 !text-white hover:!bg-red-500' : 'btn-danger'}`}
-        onBlur={() => setConfirmDelete(false)}
+        className="btn-danger !py-1 text-xs"
         onClick={() => {
-          if (!confirmDelete) {
-            setConfirmDelete(true)
-            return
-          }
-          const ids = [...selectedIds]
-          void removeMany(ids).then(() => {
-            toast(`已删除 ${ids.length} 张`, 'info')
-            clearSelection()
-          })
+          setConfirmDelete(false)
+          onDeleteRequest()
         }}
       >
         <Trash2 size={13} />
-        {confirmDelete ? `确认删除 ${selectedIds.length} 张` : '删除'}
+        删除…
       </button>
       <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
       <button
@@ -588,12 +570,27 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
   const apply = (): void => {
     const additions = Array.from(new Set([...picked, ...newTags.split(/[,，\s]+/).map((t) => t.trim()).filter(Boolean)]))
     if (additions.length === 0) return
+    const before = ids
+      .map((id) => images.find((i) => i.id === id))
+      .filter((i): i is ImageItem => Boolean(i))
+      .map((i) => ({ id: i.id, patch: { tags: i.tags } }))
     const entries = ids
       .map((id) => images.find((i) => i.id === id))
       .filter((i): i is ImageItem => Boolean(i))
       .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, ...additions])) }))
     void setTagsMany(entries).then(() => {
-      toast(`已为 ${ids.length} 张添加 ${additions.length} 个标签`)
+      toast(`已为 ${ids.length} 张添加 ${additions.length} 个标签`, 'success', {
+        duration: 8000,
+        action: {
+          label: '撤销',
+          onClick: () => {
+            void window.api.applyEntries(before).then(() => {
+              toast('已撤销标签修改', 'info')
+              void useLibraryStore.getState().load()
+            })
+          }
+        }
+      })
       onClose()
     })
   }
@@ -649,9 +646,76 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
   )
 }
 
+/** 删除确认弹窗：两个明确入口（所有设备删除 / 仅清理本地副本）+ 撤销提示 */
+function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => void }) {
+  const toast = useUIStore((st) => st.toast)
+  const pushUndo = useUIStore((st) => st.pushUndo)
+  const clearSelection = useUIStore((st) => st.clearSelection)
+  const [busy, setBusy] = useState(false)
+
+  const doDelete = async (mode: 'all' | 'local'): Promise<void> => {
+    setBusy(true)
+    try {
+      await window.api.deleteImages(ids, mode)
+      toast(
+        mode === 'all' ? `已从所有设备删除 ${ids.length} 张` : `已清理 ${ids.length} 张本地副本`,
+        'info',
+        mode === 'all'
+          ? {
+              duration: 8000,
+              action: {
+                label: '撤销',
+                onClick: () => {
+                  void window.api.restoreImages(ids).then(({ restored }) => {
+                    toast(restored > 0 ? `已恢复 ${restored} 张` : '暂存区已清理，无法恢复', restored > 0 ? 'success' : 'error')
+                    void useLibraryStore.getState().load()
+                  })
+                }
+              }
+            }
+          : undefined
+      )
+      clearSelection()
+      onClose()
+      void useLibraryStore.getState().load()
+    } catch (err) {
+      toast(`删除失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={`删除 ${ids.length} 张图片`} onClose={onClose} width="max-w-md">
+      <div className="space-y-3">
+        <button
+          className="w-full rounded-lg border border-red-300 p-3 text-left transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/40"
+          disabled={busy}
+          onClick={() => void doDelete('all')}
+        >
+          <div className="text-sm font-medium text-red-600 dark:text-red-400">从所有设备删除</div>
+          <div className="mt-0.5 text-xs text-neutral-400">移入废纸篓并同步删除到其他设备（本次会话内可撤销）</div>
+        </button>
+        <button
+          className="w-full rounded-lg border border-neutral-300 p-3 text-left transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          disabled={busy}
+          onClick={() => void doDelete('local')}
+        >
+          <div className="text-sm font-medium">仅清理本地副本</div>
+          <div className="mt-0.5 text-xs text-neutral-400">释放本机磁盘；记录与其他设备不受影响，需要时可重新下载</div>
+        </button>
+        <button className="btn-ghost w-full justify-center" disabled={busy} onClick={onClose}>
+          取消
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 /** 批量设置分类弹窗 */
 function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => void }) {
   const categories = useLibraryStore((s) => s.categories)
+  const images = useLibraryStore((s) => s.images)
   const assignCategoryMany = useLibraryStore((s) => s.assignCategoryMany)
   const toast = useUIStore((s) => s.toast)
   const clearSelection = useUIStore((s) => s.clearSelection)
@@ -665,8 +729,24 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
               key={cat.id}
               className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-left text-sm transition-colors hover:border-indigo-400 hover:bg-indigo-50 dark:border-neutral-700 dark:hover:bg-indigo-950/50"
               onClick={() => {
+                // 撤销快照：记录每张的旧分类
+                const before = ids
+                  .map((id) => images.find((i) => i.id === id))
+                  .filter((i): i is ImageItem => Boolean(i))
+                  .map((i) => ({ id: i.id, patch: { categoryId: i.categoryId } }))
                 void assignCategoryMany(ids, cat.id).then(() => {
-                  toast(`已将 ${ids.length} 张移入「${cat.name}」`)
+                  toast(`已将 ${ids.length} 张移入「${cat.name}」`, 'success', {
+                    duration: 8000,
+                    action: {
+                      label: '撤销',
+                      onClick: () => {
+                        void window.api.applyEntries(before).then(() => {
+                          toast('已撤销分类修改', 'info')
+                          void useLibraryStore.getState().load()
+                        })
+                      }
+                    }
+                  })
                   clearSelection()
                   onClose()
                 })
@@ -679,8 +759,23 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
           <button
             className="flex w-full items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-left text-sm text-neutral-500 transition-colors hover:border-red-400 hover:text-red-500 dark:border-neutral-700"
             onClick={() => {
+              const before = ids
+                .map((id) => images.find((i) => i.id === id))
+                .filter((i): i is ImageItem => Boolean(i))
+                .map((i) => ({ id: i.id, patch: { categoryId: i.categoryId } }))
               void assignCategoryMany(ids, null).then(() => {
-                toast(`已将 ${ids.length} 张移出分类`, 'info')
+                toast(`已将 ${ids.length} 张移出分类`, 'info', {
+                  duration: 8000,
+                  action: {
+                    label: '撤销',
+                    onClick: () => {
+                      void window.api.applyEntries(before).then(() => {
+                        toast('已撤销分类修改', 'info')
+                        void useLibraryStore.getState().load()
+                      })
+                    }
+                  }
+                })
                 clearSelection()
                 onClose()
               })
@@ -710,6 +805,8 @@ export function GalleryGrid(): JSX.Element {
   const [renaming, setRenaming] = useState<ImageItem | null>(null)
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteRequestIds, setDeleteRequestIds] = useState<string[] | null>(null)
   const [bulkDownloading, setBulkDownloading] = useState(false)
   const allImages = useLibraryStore((s) => s.images)
   const cloudCount = useUIStore((s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length)
@@ -746,14 +843,28 @@ export function GalleryGrid(): JSX.Element {
     setScrollTop(0)
   }, [filterSig])
 
-  // Esc 退出批量选择（无弹窗时）
+  // Esc 退出批量选择（无弹窗时）；Cmd/Ctrl+Z 撤销最近批量操作（无输入焦点时）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && selectionMode && !categoryPickerOpen && !tagPickerOpen) setSelectionMode(false)
+      const el = document.activeElement
+      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      if (e.key === 'Escape' && selectionMode && !categoryPickerOpen && !tagPickerOpen && !deleteConfirmOpen) {
+        setSelectionMode(false)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) {
+        const last = useUIStore.getState().popUndo()
+        if (last) {
+          e.preventDefault()
+          void last.undo().then(() => {
+            useUIStore.getState().toast(`已撤销：${last.label}`, 'info')
+            void useLibraryStore.getState().load()
+          })
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectionMode, categoryPickerOpen, tagPickerOpen, setSelectionMode])
+  }, [selectionMode, categoryPickerOpen, tagPickerOpen, deleteConfirmOpen, setSelectionMode])
 
   // 虚拟滚动：滚动/尺寸变化时更新渲染窗口（rAF 节流）
   useEffect(() => {
@@ -838,7 +949,16 @@ export function GalleryGrid(): JSX.Element {
       </div>
       <div style={{ height: Math.max(0, totalRows - lastRow - 1) * (rowH + GAP) }} />
 
-      {menu && <CardContextMenu image={menu.image} x={menu.x} y={menu.y} onClose={() => setMenu(null)} onRename={(img) => setRenaming(img)} />}
+      {menu && (
+        <CardContextMenu
+          image={menu.image}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={(img) => setRenaming(img)}
+          onDeleteRequest={(ids) => setDeleteRequestIds(ids)}
+        />
+      )}
       {renaming && <RenameModal image={renaming} onClose={() => setRenaming(null)} />}
 
       {/* 批量操作栏与分类选择弹窗 */}
@@ -848,12 +968,19 @@ export function GalleryGrid(): JSX.Element {
         onDownloadSelected={() => void downloadSelected()}
         downloading={bulkDownloading}
         cloudCount={cloudCount}
+        onDeleteRequest={() => setDeleteConfirmOpen(true)}
       />
       {categoryPickerOpen && selectedIds.length > 0 && (
         <BatchCategoryModal ids={[...selectedIds]} onClose={() => setCategoryPickerOpen(false)} />
       )}
       {tagPickerOpen && selectedIds.length > 0 && (
         <BatchTagModal ids={[...selectedIds]} onClose={() => setTagPickerOpen(false)} />
+      )}
+      {deleteConfirmOpen && selectedIds.length > 0 && (
+        <DeleteConfirmModal ids={[...selectedIds]} onClose={() => setDeleteConfirmOpen(false)} />
+      )}
+      {deleteRequestIds && (
+        <DeleteConfirmModal ids={deleteRequestIds} onClose={() => setDeleteRequestIds(null)} />
       )}
     </div>
   )

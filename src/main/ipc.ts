@@ -12,8 +12,10 @@ import {
   cropToNewImage,
   deleteCategory,
   deleteImage,
+  applyEntries,
   deleteImages,
   getLibrary,
+  restoreImages,
   importPaths,
   renameCategory,
   renameImage,
@@ -202,8 +204,10 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     IPC.LIBRARY_DELETE_IMAGES,
-    wrap((payload: { ids: string[] }) => deleteImages(payload.ids))
+    wrap((payload: { ids: string[]; mode?: 'all' | 'local' }) => deleteImages(payload.ids, payload.mode ?? 'all'))
   )
+  ipcMain.handle(IPC.LIBRARY_RESTORE_IMAGES, wrap((payload: { ids: string[] }) => restoreImages(payload.ids)))
+  ipcMain.handle(IPC.LIBRARY_APPLY_ENTRIES, wrap((payload: { entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[] }) => applyEntries(payload.entries)))
   ipcMain.handle(
     IPC.LIBRARY_SET_TAGS_MANY,
     wrap((payload: { entries: { id: string; tags: string[] }[] }) => setTagsMany(payload.entries))

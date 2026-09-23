@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /** 各子目录名（迁移与创建共用） */
-const SUB_DIRS = ['data', 'library', 'thumbnails', 'previews', 'applied', 'bin'] as const
+const SUB_DIRS = ['data', 'library', 'thumbnails', 'previews', 'applied', 'bin', 'trash-staging'] as const
 
 /** 默认存储根目录 */
 export function defaultRoot(): string {
@@ -159,6 +159,8 @@ function sub(name: (typeof SUB_DIRS)[number]): string {
 }
 
 export const dataDir = (): string => sub('data')
+/** 删除暂存区：撤销窗口内的已删文件；退出应用时统一送系统废纸篓 */
+export const trashStagingDir = (): string => sub('trash-staging')
 export const libraryDir = (): string => sub('library')
 export const thumbDir = (): string => sub('thumbnails')
 export const previewDir = (): string => sub('previews')

@@ -8,6 +8,9 @@ export interface Toast {
   id: number
   message: string
   type: 'success' | 'error' | 'info'
+  /** 可选操作按钮（如"撤销"） */
+  action?: { label: string; onClick: () => void }
+  duration?: number
 }
 
 interface UIState {
@@ -40,8 +43,12 @@ interface UIState {
   toggleSelected: (id: string) => void
   setSelectedIds: (ids: string[]) => void
   clearSelection: () => void
-  toast: (message: string, type?: Toast['type']) => void
+  toast: (message: string, type?: Toast['type'], opts?: { action?: Toast['action']; duration?: number }) => void
   dismissToast: (id: number) => void
+  /** 撤销栈（最近 10 条可撤销操作） */
+  undoStack: { label: string; undo: () => Promise<void> }[]
+  pushUndo: (label: string, undo: () => Promise<void>) => void
+  popUndo: () => { label: string; undo: () => Promise<void> } | null
   setDarkMode: (dark: boolean) => void
 }
 
@@ -74,11 +81,18 @@ export const useUIStore = create<UIState>((set, get) => ({
     })),
   setSelectedIds: (ids) => set({ selectedIds: ids }),
   clearSelection: () => set({ selectedIds: [] }),
-  toast: (message, type = 'success') => {
+  toast: (message, type = 'success', opts) => {
     const id = toastSeq++
-    set({ toasts: [...get().toasts, { id, message, type }] })
-    // 3 秒后自动消失
-    setTimeout(() => get().dismissToast(id), 3000)
+    set({ toasts: [...get().toasts, { id, message, type, action: opts?.action, duration: opts?.duration }] })
+    setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
+  },
+  undoStack: [],
+  pushUndo: (label, undo) => set((st) => ({ undoStack: [...st.undoStack, { label, undo }].slice(-10) })),
+  popUndo: () => {
+    const stack = get().undoStack
+    const last = stack[stack.length - 1] ?? null
+    if (last) set({ undoStack: stack.slice(0, -1) })
+    return last
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
   setDarkMode: (dark) => set({ darkMode: dark })

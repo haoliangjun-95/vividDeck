@@ -220,6 +220,8 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  // 撤销窗口关闭：删除暂存区文件送系统废纸篓
+  void import('./services/library').then((m) => m.purgeStaging())
   // 标记真实退出：托盘菜单 / Cmd+Q / 外部 SIGTERM（logout 等）都会经过这里；
   // 未置标记时窗口 close 会被"隐藏到托盘"逻辑拦截，导致应用杀不死
   ;(app as unknown as { __isQuitting?: boolean }).__isQuitting = true

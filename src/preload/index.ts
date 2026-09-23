@@ -55,7 +55,10 @@ const api = {
     call<LibraryData>(IPC.LIBRARY_UPDATE_IMAGE, { id, patch }),
   updateImages: (ids: string[], patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>) =>
     call<LibraryData>(IPC.LIBRARY_UPDATE_IMAGES, { ids, patch }),
-  deleteImages: (ids: string[]) => call<LibraryData>(IPC.LIBRARY_DELETE_IMAGES, { ids }),
+  deleteImages: (ids: string[], mode?: 'all' | 'local') => call<LibraryData>(IPC.LIBRARY_DELETE_IMAGES, { ids, mode }),
+  restoreImages: (ids: string[]) => call<{ restored: number }>(IPC.LIBRARY_RESTORE_IMAGES, { ids }),
+  applyEntries: (entries: { id: string; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }[]) =>
+    call<LibraryData>(IPC.LIBRARY_APPLY_ENTRIES, { entries }),
   setTagsMany: (entries: { id: string; tags: string[] }[]) =>
     call<LibraryData>(IPC.LIBRARY_SET_TAGS_MANY, { entries }),
   addCategory: (name: string) => call<LibraryData>(IPC.LIBRARY_ADD_CATEGORY, { name }),

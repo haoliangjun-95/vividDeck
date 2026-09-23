@@ -21,7 +21,9 @@ export const IPC = {
   LIBRARY_DELETE_IMAGE: 'library:deleteImage', // { id } -> LibraryData
   LIBRARY_UPDATE_IMAGE: 'library:updateImage', // { id, patch } -> LibraryData
   LIBRARY_UPDATE_IMAGES: 'library:updateImages', // { ids, patch } -> LibraryData（批量）
-  LIBRARY_DELETE_IMAGES: 'library:deleteImages', // { ids } -> LibraryData（批量，含墓碑）
+  LIBRARY_DELETE_IMAGES: 'library:deleteImages', // { ids, mode? } -> LibraryData（批量；all=墓碑同步 / local=仅本地）
+  LIBRARY_RESTORE_IMAGES: 'library:restoreImages', // { ids } -> { restored }（撤销删除）
+  LIBRARY_APPLY_ENTRIES: 'library:applyEntries', // { entries } -> LibraryData（按图恢复属性，撤销逆操作）
   LIBRARY_SET_TAGS_MANY: 'library:setTagsMany', // { entries: {id, tags}[] } -> LibraryData（批量按图标签）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData

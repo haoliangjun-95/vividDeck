@@ -19,11 +19,11 @@ import {
 } from '@shared/types'
 import { JsonStore } from './store'
 import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } from '../utils/fs'
-import { isRealFile, libraryDir } from './paths'
+import { isRealFile, libraryDir, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
 import { getDeviceId } from './device'
-import { addTombstone } from './tombstones'
+import { addTombstone, removeTombstones } from './tombstones'
 import type { SyncImageRecord } from '@shared/types'
 
 // ---------- 持久化 ----------
@@ -370,20 +370,132 @@ export function updateImages(ids: string[], patch: Partial<Pick<ImageItem, 'favo
   })
 }
 
-/** 批量删除：单次事务移除记录 + 批量写墓碑（同步传播）+ 清理缓存与文件 */
-export async function deleteImages(ids: string[]): Promise<LibraryData> {
+/** 删除模式：all = 所有设备（墓碑同步传播）；local = 仅清理本地副本（不同步） */
+export type DeleteMode = 'all' | 'local'
+
+/** 该记录的文件是否由媒体库管理（位于 library/ 目录内；引用模式文件在库外） */
+function isLibraryFile(filePath: string): boolean {
+  return filePath.startsWith(libraryDir() + path.sep)
+}
+
+/** 把库内文件移入删除暂存区（返回 staging 路径；库外引用文件/文件缺失返回 null）
+ *  注意：不能再用 path===sourcePath 判断引用模式——经同步合并/自愈后
+ *  复制模式记录的 sourcePath 也已归一化为库路径 */
+async function moveToStaging(image: ImageItem): Promise<string | null> {
+  if (!isLibraryFile(image.path)) return null
+  if (!isRealFile(image.path)) return null
+  const staged = path.join(trashStagingDir(), `${image.id}_${path.basename(image.path)}`)
+  await fsp.rename(image.path, staged).catch(async (err) => {
+    console.error('[library] 移入暂存区失败（跨卷回退复制）:', err)
+    await fsp.copyFile(image.path, staged).catch(() => undefined)
+    await fsp.unlink(image.path).catch(() => undefined)
+  })
+  return staged
+}
+
+/**
+ * 批量删除（单次事务）：
+ * - all：文件入暂存区（当次会话可撤销）+ 墓碑 + 移除记录
+ * - local：仅清理本地副本——文件入暂存区、记录保留 localFile=false、不写墓碑
+ */
+export async function deleteImages(ids: string[], mode: DeleteMode = 'all'): Promise<LibraryData> {
   const idSet = new Set(ids)
   const targets = getLibrary().images.filter((img) => idSet.has(img.id))
   for (const image of targets) {
-    if (image.path !== image.sourcePath) {
-      await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
-    }
+    await moveToStaging(image)
     purgeCache(image.id)
-    addTombstone(image.id, 'image')
+    if (mode === 'all') addTombstone(image.id, 'image')
+  }
+  if (mode === 'all') {
+    for (const image of targets) recentDeletedRecords.set(image.id, { ...image })
+    return commit((data) => {
+      data.images = data.images.filter((img) => !idSet.has(img.id))
+    })
   }
   return commit((data) => {
-    data.images = data.images.filter((img) => !idSet.has(img.id))
+    for (const img of data.images) {
+      if (!idSet.has(img.id)) continue
+      img.localFile = false
+      img.path = ''
+    }
   })
+}
+
+/** 批量按图恢复属性（撤销逆操作；单次事务，重打时间戳以在 LWW 中胜出） */
+export function applyEntries(entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[]): LibraryData {
+  const map = new Map(entries.map((e) => [e.id, e.patch]))
+  return commit((data) => {
+    for (const target of data.images) {
+      const patch = map.get(target.id)
+      if (!patch) continue
+      if (patch.favorite !== undefined) target.favorite = patch.favorite
+      if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
+      if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+      stamp(target)
+    }
+  })
+}
+
+/**
+ * 撤销删除：从暂存区移回文件 + 删除墓碑（阻止同步传播）+ 恢复记录。
+ * 仅当次会话有效（退出时暂存区已清空则不可恢复，返回恢复成功数）。
+ */
+export async function restoreImages(ids: string[]): Promise<{ restored: number }> {
+  const idSet = new Set(ids)
+  // 1) 文件从暂存区移回媒体库
+  let restored = 0
+  const staging = trashStagingDir()
+  let staged: string[] = []
+  try {
+    staged = await fsp.readdir(staging)
+  } catch {
+    staged = []
+  }
+  for (const id of ids) {
+    const prefix = `${id}_`
+    const hit = staged.find((n) => n.startsWith(prefix))
+    if (!hit) continue
+    const back = path.join(libraryDir(), hit.slice(prefix.length))
+    try {
+      await fsp.rename(path.join(staging, hit), back)
+      // 2) 恢复记录（含文件路径）并撤销墓碑
+      const rec = recentDeletedRecords.get(id)
+      commit((data) => {
+        if (data.images.some((i) => i.id === id)) {
+          const t = data.images.find((i) => i.id === id)
+          if (t) {
+            t.path = back
+            t.sourcePath = back
+            t.localFile = true
+          }
+        } else if (rec) {
+          data.images.push({ ...rec, path: back, sourcePath: back, localFile: true })
+        }
+      })
+      removeTombstones([id])
+      recentDeletedRecords.delete(id)
+      restored++
+    } catch (err) {
+      console.error(`[library] 恢复 ${id} 失败:`, err)
+    }
+  }
+  return { restored }
+}
+
+/** 删除时留存的记录快照（撤销恢复用；仅内存，当次会话有效） */
+const recentDeletedRecords = new Map<string, ImageItem>()
+
+/** 退出前：清空暂存区 → 系统废纸篓（撤销窗口关闭） */
+export async function purgeStaging(): Promise<void> {
+  const staging = trashStagingDir()
+  try {
+    const files = await fsp.readdir(staging)
+    for (const name of files) {
+      await shell.trashItem(path.join(staging, name)).catch(() => undefined)
+    }
+  } catch {
+    /* 目录不存在则忽略 */
+  }
 }
 
 /** 基于原图裁剪并另存为新图片（sharp 在原图上执行，保证画质） */

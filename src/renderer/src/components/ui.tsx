@@ -85,15 +85,25 @@ export function ToastHost(): JSX.Element {
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
       {toasts.map((t) => (
-        <button
+        <div
           key={t.id}
-          className={`pointer-events-auto rounded-full px-4 py-2 text-sm text-white shadow-lg transition-opacity ${
+          className={`pointer-events-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm text-white shadow-lg ${
             t.type === 'error' ? 'bg-red-600' : t.type === 'info' ? 'bg-neutral-700' : 'bg-emerald-600'
           }`}
-          onClick={() => dismiss(t.id)}
         >
-          {t.message}
-        </button>
+          <span>{t.message}</span>
+          {t.action && (
+            <button
+              className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium hover:bg-white/30"
+              onClick={() => {
+                t.action?.onClick()
+                dismiss(t.id)
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
+        </div>
       ))}
     </div>
   )
