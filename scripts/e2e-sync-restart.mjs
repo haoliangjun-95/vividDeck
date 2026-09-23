@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 // 同步重启回归验证：同步后重启不再腐蚀云端记录（path 自愈 bug）+ 已损坏记录启动自愈 + 点击实时下载
 // 前置：s3rver@9100、A@9222、B@9223 已启动（VD_ALLOW_DEV_SYNC=1，--user-data-dir 各自独立）
 // 运行：node scripts/e2e-sync-restart.mjs（脚本内会重启 B 实例）

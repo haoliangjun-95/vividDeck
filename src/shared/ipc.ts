@@ -45,6 +45,7 @@ export const IPC = {
   SYNC_NOW: 'sync:now', // -> SyncResultStats
   SYNC_DOWNLOAD: 'sync:download', // SyncDownloadScope -> { downloaded, failed }
   SYNC_ENSURE_LOCAL: 'sync:ensureLocal', // { imageId } -> { path }（按需下载单张）
+  SYNC_CANCEL_DOWNLOAD: 'sync:cancelDownload', // 取消进行中的批量下载
 
   // ---------- 悬浮球 ----------
   BUBBLE_MOVE_BY: 'bubble:moveBy', // (dx, dy) 拖动位移（on 消息，高频）

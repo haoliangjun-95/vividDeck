@@ -45,6 +45,14 @@ const engineStore = new JsonStore<EngineState>('sync-state', {
   uploadedHashes: []
 })
 
+/** 批量下载取消标志（sync:cancelDownload 触发；单张按需下载不受影响） */
+let downloadCancelled = false
+
+/** 取消进行中的批量下载（downloadScope）；下批次自动复位 */
+export function cancelDownload(): void {
+  downloadCancelled = true
+}
+
 /** 正在按需下载的图片（防止并发重复下载） */
 const inflightDownloads = new Map<string, Promise<string>>()
 /** 同步互斥 */
@@ -66,6 +74,13 @@ function progress(p: SyncProgress): void {
 
 function getUploadedSet(): Set<string> {
   return new Set(engineStore.get().uploadedHashes)
+}
+
+/** 清空"已上传哈希"缓存：切换同步目标（地址/端口/bucket/账号）后调用，
+ *  否则旧桶的缓存会导致新桶漏传原图 */
+export function resetUploadCache(): void {
+  engineStore.set({ uploadedHashes: [] })
+  engineStore.flush()
 }
 
 function markUploaded(hash: string): void {
@@ -308,8 +323,8 @@ export async function ensureLocal(imageId: string): Promise<string> {
   }
 }
 
-/** 批量下载（离线准备） */
-export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloaded: number; failed: number }> {
+/** 批量下载（离线准备；并发 3、可取消） */
+export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloaded: number; failed: number; cancelled?: boolean }> {
   const images = getLibrary().images.filter((img) => {
     if (img.localFile) return false
     if (scope.type === 'favorite') return img.favorite
@@ -318,8 +333,10 @@ export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloa
   })
   let downloaded = 0
   let failed = 0
+  downloadCancelled = false
   progress({ phase: 'downloading', current: 0, total: images.length, message: '批量下载原图…' })
-  for (const img of images) {
+  await runPool(images, 3, async (img) => {
+    if (downloadCancelled) return
     try {
       await ensureLocal(img.id)
       downloaded++
@@ -327,8 +344,8 @@ export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloa
       failed++
     }
     progress({ phase: 'downloading', current: downloaded + failed, total: images.length, message: `下载 ${downloaded + failed}/${images.length}` })
-  }
-  return { downloaded, failed }
+  })
+  return { downloaded, failed, cancelled: downloadCancelled }
 }
 
 /** 引擎初始化：注册变更防抖 + 启动时同步 */

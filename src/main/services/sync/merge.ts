@@ -120,15 +120,17 @@ export function mergeAll(input: MergeInput): MergeOutput {
       if (id === canonical.id) continue
       const loser = slots.get(id)!.record
       const winner = slots.get(canonical.id)!
-      // 元数据合并进规范记录：收藏取或、标签并集、其余取 LWW
-      const mergedFavorite = canonical.favorite || loser.favorite
-      const mergedTags = Array.from(new Set([...canonical.tags, ...loser.tags]))
-      const lww = pickRecordFields(canonical, loser)
+      // 注意：canonical 变量捕获的是循环开始时的记录对象，winner.record 每轮被替换，
+      // 必须重读当前值参与合并，否则三份以上重复会丢掉前几轮并入的收藏/标签
+      const current = winner.record
+      const mergedFavorite = current.favorite || loser.favorite
+      const mergedTags = Array.from(new Set([...current.tags, ...loser.tags]))
+      const lww = pickRecordFields(current, loser)
       winner.record = {
         ...lww,
         favorite: mergedFavorite,
         tags: mergedTags,
-        updatedAt: Math.max(canonical.updatedAt, loser.updatedAt)
+        updatedAt: Math.max(current.updatedAt, loser.updatedAt)
       }
       // 本地文件信息转移到规范记录（ loser 本地有文件而 canonical 没有）
       if (!winner.local && slots.get(id)!.local) {
@@ -228,6 +230,18 @@ export function mergeAll(input: MergeInput): MergeOutput {
         }
       }
       categories = categories.filter((c) => !catRemap.has(c.id))
+    }
+  }
+
+  // ---------- 5.6) 孤儿分类引用兜底 ----------
+  // 重定向映射只存在于本次合并内存中；离线设备稍后上传的新图可能仍引用
+  // 已被去重/删除的旧分类 id——统一回落到"未分类"，保证图片始终可见。
+  {
+    const catIds = new Set(categories.map((c) => c.id))
+    for (const img of images) {
+      if (img.categoryId != null && !catIds.has(img.categoryId)) {
+        img.categoryId = null
+      }
     }
   }
 

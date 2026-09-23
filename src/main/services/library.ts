@@ -111,7 +111,32 @@ function backfillSyncFields(): void {
 function healLibraryPaths(): void {
   const data = libraryStore.get()
   let dirty = false
+  const catIds = new Set(data.categories.map((c) => c.id))
   for (const img of data.images) {
+    // 孤儿分类引用：指向已不存在的分类 → 回到未分类（图片不再从视图中消失）
+    if (img.categoryId != null && !catIds.has(img.categoryId)) {
+      img.categoryId = null
+      dirty = true
+    }
+
+    // 库内路径但不在当前存储根（更换存储位置为"复制"后旧目录仍存在）：
+    // 显式改写到当前媒体库，避免之后清理旧目录时批量断链
+    const name = path.basename(img.path)
+    const candidate = name ? path.join(libraryDir(), name) : ''
+    const looksLikeLibraryPath = /[\\/]vividdeck[\\/]storage[\\/]library[\\/]/i.test(img.path)
+    if (
+      looksLikeLibraryPath &&
+      candidate &&
+      isRealFile(candidate) &&
+      path.resolve(candidate) !== path.resolve(img.path)
+    ) {
+      img.path = candidate
+      img.sourcePath = candidate
+      img.localFile = true
+      dirty = true
+      continue
+    }
+
     if (isRealFile(img.path)) {
       if (!img.localFile) {
         img.localFile = true
@@ -120,8 +145,6 @@ function healLibraryPaths(): void {
       continue
     }
     // 路径失效：尝试当前媒体库目录下的同名文件（空 basename 跳过，避免匹配到目录）
-    const name = path.basename(img.path)
-    const candidate = name ? path.join(libraryDir(), name) : ''
     if (candidate && isRealFile(candidate)) {
       const wasReference = img.path !== img.sourcePath
       img.path = candidate
@@ -269,13 +292,22 @@ export function renameImage(id: string, newFileName: string): LibraryData {
       }
     })
   }
-  const target = path.join(path.dirname(image.path), nextName)
+  // 目标文件名唯一化：避免 rename 静默覆盖库内已有文件（POSIX rename 语义）
+  // 例外：仅大小写变化视为同一文件（大小不敏感卷上 existsSync 会误报冲突）
+  let target = path.join(path.dirname(image.path), nextName)
+  if (
+    fs.existsSync(target) &&
+    path.resolve(target).toLowerCase() !== path.resolve(image.path).toLowerCase()
+  ) {
+    const { base: nameOnly, ext } = splitFileName(nextName)
+    target = path.join(path.dirname(image.path), `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`)
+  }
   fs.renameSync(image.path, target)
   return commit((data) => {
     const item = data.images.find((img) => img.id === id)
     if (item) {
       item.path = target
-      item.fileName = nextName
+      item.fileName = path.basename(target)
       stamp(item)
     }
   })
@@ -362,6 +394,7 @@ export async function cropToNewImage(imageId: string, rect: CropRect, label: str
   const newName = `${sanitizeFileName(label || `${base}_裁剪`)}_${genId().slice(-4)}.jpg`
   const target = path.join(libraryDir(), newName)
   await sharp(image.path)
+    .rotate() // 与预览图一致：先按 EXIF 摆正，坐标系才与取景框对齐
     .extract({ left: Math.round(rect.x), top: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })
     .jpeg({ quality: 95 })
     .toFile(target)

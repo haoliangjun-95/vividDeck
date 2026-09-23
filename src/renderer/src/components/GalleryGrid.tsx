@@ -2,7 +2,7 @@
  * 画廊网格：缩略图卡片（含分类/标签信息栏）、懒加载分页、拖拽源、
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
@@ -10,7 +10,6 @@ import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
 import { Modal } from './ui'
 import type { ImageItem } from '@shared/types'
 
-const PAGE_SIZE = 60
 
 /** 卡片信息栏：分类徽章 + 标签 chips */
 function CardInfoFooter({ image }: { image: ImageItem }) {
@@ -483,7 +482,19 @@ function RenameModal({ image, onClose }: { image: ImageItem; onClose: () => void
 }
 
 /** 批量操作栏（选择模式下有选中时显示） */
-function BatchActionBar({ onOpenCategoryPicker, onOpenTagPicker }: { onOpenCategoryPicker: () => void; onOpenTagPicker: () => void }) {
+function BatchActionBar({
+  onOpenCategoryPicker,
+  onOpenTagPicker,
+  onDownloadSelected,
+  downloading,
+  cloudCount
+}: {
+  onOpenCategoryPicker: () => void
+  onOpenTagPicker: () => void
+  onDownloadSelected: () => void
+  downloading: boolean
+  cloudCount: number
+}) {
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectedIds = useUIStore((s) => s.setSelectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
@@ -528,6 +539,12 @@ function BatchActionBar({ onOpenCategoryPicker, onOpenTagPicker }: { onOpenCateg
         <TagIcon size={13} />
         加标签…
       </button>
+      {cloudCount > 0 && (
+        <button className="btn-ghost !py-1 text-xs" onClick={onDownloadSelected} title={`下载选中图片的原图到本地（${cloudCount} 张云端）`}>
+          <CloudDownload size={13} />
+          {downloading ? '下载中…' : `下载原图(${cloudCount})`}
+        </button>
+      )}
       <button
         className={`btn !py-1 text-xs ${confirmDelete ? '!bg-red-600 !text-white hover:!bg-red-500' : 'btn-danger'}`}
         onBlur={() => setConfirmDelete(false)}
@@ -688,15 +705,46 @@ export function GalleryGrid(): JSX.Element {
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
-  const [visible, setVisible] = useState(PAGE_SIZE)
-  const sentinelRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; image: ImageItem } | null>(null)
   const [renaming, setRenaming] = useState<ImageItem | null>(null)
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [tagPickerOpen, setTagPickerOpen] = useState(false)
+  const [bulkDownloading, setBulkDownloading] = useState(false)
+  const allImages = useLibraryStore((s) => s.images)
+  const cloudCount = useUIStore((s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length)
 
-  // 筛选条件变化时重置分页
-  useEffect(() => setVisible(PAGE_SIZE), [images])
+  /** 批量下载选中图片的云端原图（支持取消） */
+  const downloadSelected = async (): Promise<void> => {
+    const ids = useUIStore.getState().selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile)
+    if (ids.length === 0) return
+    setBulkDownloading(true)
+    let done = 0
+    let failed = 0
+    for (const id of ids) {
+      try {
+        await window.api.syncEnsureLocal(id)
+        done++
+      } catch {
+        failed++
+      }
+    }
+    setBulkDownloading(false)
+    if (failed > 0) toast(`下载完成 ${done} 张，失败 ${failed} 张`, 'info')
+    else toast(`已下载 ${done} 张到本地`)
+    void useLibraryStore.getState().load()
+  }
+
+  // 虚拟化状态：滚动偏移 + 容器尺寸（rAF 节流更新，避免每像素 setState）
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewport, setViewport] = useState({ w: 1200, h: 800 })
+
+  // 仅筛选/排序变化时回到顶部；元数据刷新不打断浏览位置（虚拟化天然保留 scrollTop）
+  const filterSig = useLibraryStore((s) => JSON.stringify(s.filter) + '|' + s.sort)
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
+    setScrollTop(0)
+  }, [filterSig])
 
   // Esc 退出批量选择（无弹窗时）
   useEffect(() => {
@@ -707,18 +755,30 @@ export function GalleryGrid(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [selectionMode, categoryPickerOpen, tagPickerOpen, setSelectionMode])
 
-  // 滚动触底加载更多（懒分页，数千张不卡顿）
+  // 虚拟滚动：滚动/尺寸变化时更新渲染窗口（rAF 节流）
   useEffect(() => {
-    const el = sentinelRef.current
+    const el = scrollRef.current
     if (!el) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) setVisible((v) => v + PAGE_SIZE)
+    let raf = 0
+    const onScroll = (): void => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        setScrollTop(el.scrollTop)
+      })
+    }
+    const ro = new ResizeObserver(() => {
+      setViewport({ w: el.clientWidth, h: el.clientHeight })
     })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [images])
-
-  const shown = useMemo(() => images.slice(0, visible), [images, visible])
+    el.addEventListener('scroll', onScroll, { passive: true })
+    ro.observe(el)
+    setViewport({ w: el.clientWidth, h: el.clientHeight })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
+  }, [])
 
   const openMenu = (e: React.MouseEvent, image: ImageItem): void => {
     e.preventDefault()
@@ -733,6 +793,8 @@ export function GalleryGrid(): JSX.Element {
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault()
+          // 阻止冒泡：App 级窗口 drop 监听也会导入，双导入会产生重复记录
+          e.stopPropagation()
           const paths = Array.from(e.dataTransfer.files).map((f) => window.api.filePathOf(f))
           if (paths.length) void importPaths(paths).then((r) => r.added > 0 && toast(`导入 ${r.added} 张图片`))
         }}
@@ -750,14 +812,31 @@ export function GalleryGrid(): JSX.Element {
     )
   }
 
+  // 窗口化计算：列数与卡片行高（与 CSS 断点保持一致）
+  const GAP = 12
+  const PAD = 16
+  const cols = viewport.w >= 1536 ? 6 : viewport.w >= 1280 ? 5 : viewport.w >= 1024 ? 4 : viewport.w >= 640 ? 3 : 2
+  const colW = (viewport.w - PAD * 2 - GAP * (cols - 1)) / cols
+  const FOOTER = 34
+  const rowH = (colW * 3) / 4 + FOOTER + 1 /* ring 边距 */
+  const totalRows = Math.ceil(images.length / cols)
+  const firstRow = Math.max(0, Math.floor((scrollTop - PAD) / (rowH + GAP)) - 2)
+  const lastRow = Math.min(totalRows - 1, Math.ceil((scrollTop + viewport.h - PAD) / (rowH + GAP)) + 2)
+  const shown = images.slice(firstRow * cols, (lastRow + 1) * cols)
+
   return (
-    <div className="h-full overflow-y-auto p-4 pb-24">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+    <div ref={scrollRef} className="h-full overflow-y-auto p-4 pb-24">
+      {/* 上下 spacer 撑起总高度，保持滚动条与位置稳定 */}
+      <div style={{ height: Math.max(0, firstRow) * (rowH + GAP) }} />
+      <div
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+      >
         {shown.map((image) => (
           <ImageCard key={image.id} image={image} onContextMenu={openMenu} />
         ))}
       </div>
-      <div ref={sentinelRef} className="h-8" />
+      <div style={{ height: Math.max(0, totalRows - lastRow - 1) * (rowH + GAP) }} />
 
       {menu && <CardContextMenu image={menu.image} x={menu.x} y={menu.y} onClose={() => setMenu(null)} onRename={(img) => setRenaming(img)} />}
       {renaming && <RenameModal image={renaming} onClose={() => setRenaming(null)} />}
@@ -766,6 +845,9 @@ export function GalleryGrid(): JSX.Element {
       <BatchActionBar
         onOpenCategoryPicker={() => setCategoryPickerOpen(true)}
         onOpenTagPicker={() => setTagPickerOpen(true)}
+        onDownloadSelected={() => void downloadSelected()}
+        downloading={bulkDownloading}
+        cloudCount={cloudCount}
       />
       {categoryPickerOpen && selectedIds.length > 0 && (
         <BatchCategoryModal ids={[...selectedIds]} onClose={() => setCategoryPickerOpen(false)} />

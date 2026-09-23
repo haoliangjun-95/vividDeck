@@ -100,6 +100,7 @@ const api = {
   syncNow: () => call<SyncResultStats>(IPC.SYNC_NOW),
   syncDownload: (scope: SyncDownloadScope) => call<{ downloaded: number; failed: number }>(IPC.SYNC_DOWNLOAD, scope),
   syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),
+  syncCancelDownload: () => ipcRenderer.invoke(IPC.SYNC_CANCEL_DOWNLOAD) as Promise<{ ok: boolean }>,
 
   // ---------- 悬浮球 ----------
   bubbleMoveBy: (dx: number, dy: number) => {

@@ -1,7 +1,7 @@
 /**
  * 工具栏：导入图片/文件夹、关键词搜索、分辨率与文件大小筛选、排序
  */
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { FilePlus2, FolderPlus, ListChecks, Loader2, Search } from 'lucide-react'
 import { useLibraryStore, selectFilteredImages, type SortKey } from '../store/library'
 import { useUIStore } from '../store/ui'
@@ -40,6 +40,20 @@ export function Toolbar(): JSX.Element {
   const toast = useUIStore((s) => s.toast)
   const selectionMode = useUIStore((s) => s.selectionMode)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
+
+  // 搜索防抖：本地输入即时回显，250ms 后才提交到 store 触发全量过滤
+  const [keyword, setKeyword] = useState(filter.keyword)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      if (keyword !== filter.keyword) setFilter({ keyword })
+    }, 250)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword])
 
   const doImport = async (mode: 'files' | 'folder'): Promise<void> => {
     try {
@@ -81,8 +95,8 @@ export function Toolbar(): JSX.Element {
         <input
           className="field w-56 !pl-7"
           placeholder="搜索文件名…"
-          value={filter.keyword}
-          onChange={(e) => setFilter({ keyword: e.target.value })}
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
         />
       </div>
 

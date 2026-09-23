@@ -239,6 +239,12 @@ export function Lightbox(): JSX.Element | null {
     if (!imageId) return
     const onKey = (e: KeyboardEvent): void => {
       if (renaming) return
+      // 输入框聚焦时不切图（移动光标误触会把后续标签写到另一张图上）
+      const el = document.activeElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        if (e.key === 'Escape') (el as HTMLInputElement).blur()
+        return
+      }
       if (e.key === 'ArrowLeft') nav(-1)
       else if (e.key === 'ArrowRight') nav(1)
       else if (e.key === 'Escape') close()

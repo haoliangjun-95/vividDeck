@@ -106,16 +106,14 @@ function nextImageId(pool: string[], config: SlideshowConfig, cursorKey = '', ex
     return pool[index]
   }
 
-  // 随机：按 cursorKey 维护各自的洗牌队列，耗尽重洗；素材池变化时同步增删
-  const queue = shuffleQueues.get(cursorKey) ?? []
+  // 随机：按 cursorKey 维护"未播放"洗牌队列；仅剔除已不在池中的 id，
+  // 不回填已播放的（否则队列永不耗尽、变成固定顺序循环）；耗尽后整池重洗。
+  // 新导入的图会在下一次重洗时加入。
+  let queue = shuffleQueues.get(cursorKey) ?? []
   const poolSet = new Set(pool)
-  const filtered = queue.filter((id) => poolSet.has(id))
-  for (const id of pool) if (!filtered.includes(id)) filtered.push(id)
-  let candidates = filtered
-  if (candidates.length > excludeIds.size) {
-    candidates = candidates.filter((id) => !excludeIds.has(id))
-  }
-  if (candidates.length === 0) candidates = shuffle(pool)
+  queue = queue.filter((id) => poolSet.has(id))
+  let candidates = queue.filter((id) => !excludeIds.has(id))
+  if (candidates.length === 0) candidates = shuffle([...pool].filter((id) => !excludeIds.has(id)))
   const picked = candidates.shift() ?? null
   shuffleQueues.set(cursorKey, candidates)
   return picked
@@ -140,22 +138,27 @@ async function tick(manual = false): Promise<void> {
 
     const targets = config.independentMonitors && monitorIds.length > 1 ? monitorIds : [undefined]
     for (const target of targets) {
-      // 独立模式：每个显示器自己的游标/队列；共享模式：'' 游标、全部屏同图
-      const imageId = nextImageId(pool, config, target ?? '', usedThisTick)
-      if (!imageId) continue
-      const image = images.find((img) => img.id === imageId)
-      if (!image) continue
+      // 逐屏容错：任何一屏失败（下载/设置异常）记录日志并继续其余屏幕
+      try {
+        // 独立模式：每个显示器自己的游标/队列；共享模式：'' 游标、全部屏同图
+        const imageId = nextImageId(pool, config, target ?? '', usedThisTick)
+        if (!imageId) continue
+        const image = images.find((img) => img.id === imageId)
+        if (!image) continue
 
-      // 云端图（按需下载模式）先取回本地再设置
-      let filePath = image.path
-      if (!image.localFile || !fs.existsSync(image.path)) {
-        filePath = await ensureLocal(image.id)
+        // 云端图（按需下载模式）先取回本地再设置
+        let filePath = image.path
+        if (!image.localFile || !fs.existsSync(image.path)) {
+          filePath = await ensureLocal(image.id)
+        }
+
+        const applyTo = target ? [target] : monitorIds
+        const result = await applyWallpaper(filePath, applyTo, config.fillMode)
+        usedThisTick.add(imageId)
+        entries.push({ entry: recordApply(imageId, result.applied, config.fillMode), manual })
+      } catch (err) {
+        console.error(`[slideshow] 显示器 ${target ?? '(全部)'} 切换失败，跳过:`, err)
       }
-
-      const applyTo = target ? [target] : monitorIds
-      const result = await applyWallpaper(filePath, applyTo, config.fillMode)
-      usedThisTick.add(imageId)
-      entries.push({ entry: recordApply(imageId, result.applied, config.fillMode), manual })
     }
 
     if (entries.length > 0) {
@@ -183,8 +186,9 @@ function schedule(delayMs?: number): void {
     delay = Math.max(3000, last + interval - Date.now())
   }
   timer = setTimeout(() => {
-    void tick()
-    schedule() // 重新按周期排下一次
+    // 等待本次切换完成后再调度（用最新的 lastAppliedAt 计算间隔），
+    // 否则会用旧时间戳算出极短间隔，导致一次周期内连续切换
+    void tick().then(() => schedule())
   }, delay)
   timer.unref?.()
 }

@@ -28,7 +28,8 @@ import { clearHistory, listHistory, recordApply } from './services/history'
 import { flushSettings, getSettings, updateSettings } from './services/settings'
 import { customStorageDirMissing, dirSize, hasCustomStorageDir, setStorageDirPointer, storageRoot } from './services/paths'
 import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
-import { downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
+import { resetUploadCache } from './services/sync/engine'
+import { cancelDownload, downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
@@ -241,7 +242,20 @@ export function registerIpcHandlers(): void {
     secretSet: syncHasSecret()
   }))
 
-  ipcMain.handle(IPC.SYNC_SET_CONFIG, wrap((patch: Partial<SyncConfig>) => updateSyncConfig(patch)))
+  ipcMain.handle(
+    IPC.SYNC_SET_CONFIG,
+    wrap((patch: Partial<SyncConfig>) => {
+      const before = getSyncCfg()
+      const after = updateSyncConfig(patch)
+      // 同步目标身份变化 → 清空上传缓存，避免旧桶的"已上传"标记导致新桶漏传
+      const identity = (c: SyncConfig) => [c.endpoint, c.port, c.useSSL, c.bucket, c.accessKey].join('|')
+      if (identity(before) !== identity(after)) {
+        resetUploadCache()
+        console.log('[sync] 同步目标已变更，上传缓存已重置')
+      }
+      return after
+    })
+  )
 
   ipcMain.handle(
     IPC.SYNC_SET_SECRET,
@@ -261,6 +275,10 @@ export function registerIpcHandlers(): void {
     IPC.SYNC_ENSURE_LOCAL,
     wrap(async (payload: { imageId: string }) => ({ path: await ensureLocal(payload.imageId) }))
   )
+  ipcMain.handle(IPC.SYNC_CANCEL_DOWNLOAD, () => {
+    cancelDownload()
+    return { ok: true }
+  })
 
   // ---------- 轮播 ----------
   ipcMain.handle(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
