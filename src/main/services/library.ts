@@ -459,9 +459,11 @@ export async function deleteImages(ids: string[], mode: DeleteMode = 'all'): Pro
   })
 }
 
-/** 批量按图恢复属性（撤销逆操作；单次事务，重打时间戳以在 LWW 中胜出） */
+/** 批量按图恢复属性（撤销逆操作；单次事务，重打时间戳以在 LWW 中胜出）
+ *  A2：patch 放宽为 Partial —— 与 IPC 契约的 ImagePatch 对齐（渲染层可只带部分字段，
+ *  运行时本就按 undefined 跳过，此前签名与 preload 声明存在漂移） */
 export function applyEntries(
-  entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[]
+  entries: { id: string; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }[]
 ): LibraryData {
   const map = new Map(entries.map((e) => [e.id, e.patch]))
   return commit((data) => {
