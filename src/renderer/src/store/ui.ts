@@ -2,6 +2,8 @@
  * UI 状态：抽屉 / 弹窗 / 轻提示，以及主题跟随
  */
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { sanitizeDrawer } from '../lib/prefs'
 
 export type DrawerKey = 'slideshow' | 'history' | 'settings' | null
 export interface Toast {
@@ -58,54 +60,70 @@ interface UIState {
 
 let toastSeq = 1
 
-export const useUIStore = create<UIState>((set, get) => ({
-  drawer: null,
-  lightboxImageId: null,
-  wallpaperImageId: null,
-  cropImageId: null,
-  categoryManagerOpen: false,
-  selectionMode: false,
-  selectedIds: [],
-  toasts: [],
-  darkMode: window.matchMedia('(prefers-color-scheme: dark)').matches,
+export const useUIStore = create<UIState>()(
+  persist(
+    (set, get) => ({
+      drawer: null,
+      lightboxImageId: null,
+      wallpaperImageId: null,
+      cropImageId: null,
+      categoryManagerOpen: false,
+      selectionMode: false,
+      selectedIds: [],
+      toasts: [],
+      darkMode: window.matchMedia('(prefers-color-scheme: dark)').matches,
 
-  openDrawer: (drawer) => set({ drawer }),
-  closeDrawer: () => set({ drawer: null }),
-  openLightbox: (id) => set({ lightboxImageId: id }),
-  closeLightbox: () => set({ lightboxImageId: null }),
-  openWallpaperDialog: (id) => set({ wallpaperImageId: id }),
-  closeWallpaperDialog: () => set({ wallpaperImageId: null }),
-  openCrop: (id) => set({ cropImageId: id }),
-  closeCrop: () => set({ cropImageId: null }),
-  setCategoryManagerOpen: (open) => set({ categoryManagerOpen: open }),
-  setSelectionMode: (on) => set({ selectionMode: on, ...(on ? {} : { selectedIds: [] }) }),
-  toggleSelected: (id) =>
-    set((s) => ({
-      selectedIds: s.selectedIds.includes(id)
-        ? s.selectedIds.filter((x) => x !== id)
-        : [...s.selectedIds, id]
-    })),
-  setSelectedIds: (ids) => set({ selectedIds: ids }),
-  clearSelection: () => set({ selectedIds: [] }),
-  toast: (message, type = 'success', opts) => {
-    const id = toastSeq++
-    set({
-      toasts: [
-        ...get().toasts,
-        { id, message, type, action: opts?.action, duration: opts?.duration }
-      ]
-    })
-    setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
-  },
-  undoStack: [],
-  pushUndo: (label, undo) =>
-    set((st) => ({ undoStack: [...st.undoStack, { label, undo }].slice(-10) })),
-  popUndo: () => {
-    const stack = get().undoStack
-    const last = stack[stack.length - 1] ?? null
-    if (last) set({ undoStack: stack.slice(0, -1) })
-    return last
-  },
-  dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
-  setDarkMode: (dark) => set({ darkMode: dark })
-}))
+      openDrawer: (drawer) => set({ drawer }),
+      closeDrawer: () => set({ drawer: null }),
+      openLightbox: (id) => set({ lightboxImageId: id }),
+      closeLightbox: () => set({ lightboxImageId: null }),
+      openWallpaperDialog: (id) => set({ wallpaperImageId: id }),
+      closeWallpaperDialog: () => set({ wallpaperImageId: null }),
+      openCrop: (id) => set({ cropImageId: id }),
+      closeCrop: () => set({ cropImageId: null }),
+      setCategoryManagerOpen: (open) => set({ categoryManagerOpen: open }),
+      setSelectionMode: (on) => set({ selectionMode: on, ...(on ? {} : { selectedIds: [] }) }),
+      toggleSelected: (id) =>
+        set((s) => ({
+          selectedIds: s.selectedIds.includes(id)
+            ? s.selectedIds.filter((x) => x !== id)
+            : [...s.selectedIds, id]
+        })),
+      setSelectedIds: (ids) => set({ selectedIds: ids }),
+      clearSelection: () => set({ selectedIds: [] }),
+      toast: (message, type = 'success', opts) => {
+        const id = toastSeq++
+        set({
+          toasts: [
+            ...get().toasts,
+            { id, message, type, action: opts?.action, duration: opts?.duration }
+          ]
+        })
+        setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
+      },
+      undoStack: [],
+      pushUndo: (label, undo) =>
+        set((st) => ({ undoStack: [...st.undoStack, { label, undo }].slice(-10) })),
+      popUndo: () => {
+        const stack = get().undoStack
+        const last = stack[stack.length - 1] ?? null
+        if (last) set({ undoStack: stack.slice(0, -1) })
+        return last
+      },
+      dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
+      setDarkMode: (dark) => set({ darkMode: dark })
+    }),
+    {
+      // #7 状态持久化：仅记忆抽屉开关（slideshow/history/settings）。
+      // 弹窗/toast/选择模式/撤销栈/主题均为瞬态或另有来源，不落盘
+      name: 'vd-ui-prefs',
+      version: 1,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ drawer: s.drawer }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as { drawer?: unknown }
+        return { ...current, drawer: sanitizeDrawer(p.drawer) }
+      }
+    }
+  )
+)
