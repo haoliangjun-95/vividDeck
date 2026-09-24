@@ -89,3 +89,60 @@ export function computeVirtualWindow({
     spacerBottom: Math.max(0, totalRows - lastRow - 1) * (rowH + GRID_GAP)
   }
 }
+
+/** 键盘导航（#6）支持的方向键 */
+export type NavKey = 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown'
+
+/**
+ * 方向键移动活动卡片索引（#6 键盘驱动画廊）。
+ * 无活动项时任意方向键激活第一张；current 越界先钳制再移动；空列表返回 null。
+ */
+export function moveActiveIndex(
+  current: number | null,
+  key: NavKey,
+  cols: number,
+  itemCount: number
+): number | null {
+  if (itemCount <= 0) return null
+  const max = itemCount - 1
+  if (current === null) return 0
+  const base = Math.min(Math.max(current, 0), max)
+  let delta: number
+  if (key === 'ArrowLeft') delta = -1
+  else if (key === 'ArrowRight') delta = 1
+  else if (key === 'ArrowUp') delta = -cols
+  else delta = cols
+  return Math.min(Math.max(base + delta, 0), max)
+}
+
+export interface EnsureRowVisibleInput {
+  /** 目标卡片在列表中的索引 */
+  index: number
+  cols: number
+  /** 行步进 = rowH + GRID_GAP */
+  rowStep: number
+  rowH: number
+  /** 滚动容器可视高度（px） */
+  viewportH: number
+  scrollTop: number
+}
+
+/**
+ * 计算让 index 所在行完整可见的 scrollTop（#6 键盘导航滚动跟随）。
+ * 已可见时返回原 scrollTop；行高于视口对齐行顶，低于视口对齐行底；结果不为负。
+ */
+export function ensureRowVisible({
+  index,
+  cols,
+  rowStep,
+  rowH,
+  viewportH,
+  scrollTop
+}: EnsureRowVisibleInput): number {
+  const row = Math.floor(index / Math.max(1, cols))
+  const rowTop = GRID_PAD + row * rowStep
+  const rowBottom = rowTop + rowH
+  if (rowTop < scrollTop) return Math.max(0, rowTop - GRID_PAD)
+  if (rowBottom > scrollTop + viewportH) return Math.max(0, rowBottom + GRID_PAD - viewportH)
+  return scrollTop
+}

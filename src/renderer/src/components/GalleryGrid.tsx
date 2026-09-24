@@ -1,14 +1,15 @@
 /**
- * 画廊网格（编排层，A1 拆分）：虚拟滚动窗口 + 空态导入引导 +
- * 右键菜单 / 重命名 / 批量操作栏与批量弹窗的组合。
+ * 画廊网格（编排层，A1 拆分）：虚拟滚动窗口 + 键盘导航（#6）+
+ * 空态导入引导 + 右键菜单 / 重命名 / 批量操作栏与批量弹窗的组合。
  * 子组件见 ./gallery/：ImageCard（含 CardInfoFooter）、CardContextMenu、RenameModal、
  * BatchActionBar、BatchTagModal、BatchCategoryModal、DeleteConfirmModal。
  */
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { CloudDownload } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { computeVirtualWindow } from '../lib/virtualGrid'
+import { useGalleryKeyboard } from '../hooks/useGalleryKeyboard'
 import { ImageCard } from './gallery/ImageCard'
 import { CardContextMenu } from './gallery/CardContextMenu'
 import { RenameModal } from './gallery/RenameModal'
@@ -27,6 +28,14 @@ export function GalleryGrid(): JSX.Element {
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
+  const toggleSelected = useUIStore((s) => s.toggleSelected)
+  const openLightbox = useUIStore((s) => s.openLightbox)
+  const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
+  // 任一覆盖层打开时整体禁用键盘导航（#6）
+  const lightboxImageId = useUIStore((s) => s.lightboxImageId)
+  const wallpaperImageId = useUIStore((s) => s.wallpaperImageId)
+  const cropImageId = useUIStore((s) => s.cropImageId)
+  const categoryManagerOpen = useUIStore((s) => s.categoryManagerOpen)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; image: ImageItem } | null>(null)
   const [renaming, setRenaming] = useState<ImageItem | null>(null)
@@ -86,12 +95,58 @@ export function GalleryGrid(): JSX.Element {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState({ w: 1200, h: 800 })
 
+  // 窗口化计算：列数与卡片行高（数学已提取到 lib/virtualGrid.ts，行为断言见 tests/virtual-grid.test.ts）
+  // 必须放在空态 early-return 之前，保证下方键盘导航 hook 无条件调用
+  const win = computeVirtualWindow({ viewport, scrollTop, itemCount: images.length })
+
+  // #6 键盘驱动画廊：方向键移动活动卡片并滚动跟随，回车开灯箱，空格切收藏；
+  // 选择模式下回车/空格均切换选中（与鼠标行为一致）；输入聚焦/覆盖层打开时禁用
+  const keyboardEnabled =
+    !lightboxImageId &&
+    !wallpaperImageId &&
+    !cropImageId &&
+    !categoryManagerOpen &&
+    !menu &&
+    !renaming &&
+    !categoryPickerOpen &&
+    !tagPickerOpen &&
+    !deleteConfirmOpen &&
+    !deleteRequestIds
+  const handleEnter = useCallback(
+    (index: number): void => {
+      const img = images[index]
+      if (!img) return
+      if (selectionMode) toggleSelected(img.id)
+      else openLightbox(img.id)
+    },
+    [images, selectionMode, toggleSelected, openLightbox]
+  )
+  const handleSpace = useCallback(
+    (index: number): void => {
+      const img = images[index]
+      if (!img) return
+      if (selectionMode) toggleSelected(img.id)
+      else void toggleFavorite(img.id)
+    },
+    [images, selectionMode, toggleSelected, toggleFavorite]
+  )
+  const [activeIndex, setActiveIndex] = useGalleryKeyboard({
+    enabled: keyboardEnabled,
+    itemCount: images.length,
+    cols: win.cols,
+    rowH: win.rowH,
+    scrollRef,
+    onEnter: handleEnter,
+    onSpace: handleSpace
+  })
+
   // 仅筛选/排序变化时回到顶部；元数据刷新不打断浏览位置（虚拟化天然保留 scrollTop）
   const filterSig = useLibraryStore((s) => JSON.stringify(s.filter) + '|' + s.sort)
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0
     setScrollTop(0)
-  }, [filterSig])
+    setActiveIndex(null) // 键盘活动卡片随列表一起重置
+  }, [filterSig, setActiveIndex])
 
   // Esc 退出批量选择（无弹窗时）；Cmd/Ctrl+Z 撤销最近批量操作（无输入焦点时）
   useEffect(() => {
@@ -180,8 +235,6 @@ export function GalleryGrid(): JSX.Element {
     )
   }
 
-  // 窗口化计算：列数与卡片行高（数学已提取到 lib/virtualGrid.ts，行为断言见 tests/virtual-grid.test.ts）
-  const win = computeVirtualWindow({ viewport, scrollTop, itemCount: images.length })
   const shown = images.slice(win.startIndex, win.endIndex)
 
   return (
@@ -192,8 +245,13 @@ export function GalleryGrid(): JSX.Element {
         className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
         style={{ gridTemplateColumns: `repeat(${win.cols}, minmax(0, 1fr))` }}
       >
-        {shown.map((image) => (
-          <ImageCard key={image.id} image={image} onContextMenu={openMenu} />
+        {shown.map((image, i) => (
+          <ImageCard
+            key={image.id}
+            image={image}
+            active={win.startIndex + i === activeIndex}
+            onContextMenu={openMenu}
+          />
         ))}
       </div>
       <div style={{ height: win.spacerBottom }} />

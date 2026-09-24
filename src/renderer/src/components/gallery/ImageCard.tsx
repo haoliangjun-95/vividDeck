@@ -1,7 +1,8 @@
 /**
  * 画廊缩略图卡片（A1 自 GalleryGrid 拆分）：
  * 懒加载缩略图（失败 1.2s 重试一次）、悬停元信息、收藏/设壁纸按钮、
- * 云端角标、选择模式勾选、拖拽源（拖到侧栏分类即归类）
+ * 云端角标、选择模式勾选、拖拽源（拖到侧栏分类即归类）、
+ * 键盘导航活动高亮（#6，active prop 天蓝 ring）
  */
 import React from 'react'
 import { Check, Heart, Monitor } from 'lucide-react'
@@ -13,9 +14,12 @@ import type { ImageItem } from '@shared/types'
 
 export function ImageCard({
   image,
+  active = false,
   onContextMenu
 }: {
   image: ImageItem
+  /** 键盘导航活动卡片（#6）：天蓝 ring 高亮，优先级低于选择模式的靛蓝 ring */
+  active?: boolean
   onContextMenu: (e: React.MouseEvent, image: ImageItem) => void
 }) {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
@@ -28,7 +32,11 @@ export function ImageCard({
   return (
     <div
       className={`group relative cursor-pointer overflow-hidden rounded-xl bg-neutral-100 shadow-sm ring-1 transition-shadow hover:shadow-lg dark:bg-neutral-900 ${
-        selectionMode && selected ? 'ring-2 ring-indigo-500' : 'ring-black/5 dark:ring-white/5'
+        selectionMode && selected
+          ? 'ring-2 ring-indigo-500'
+          : active
+            ? 'ring-2 ring-sky-500 dark:ring-sky-400'
+            : 'ring-black/5 dark:ring-white/5'
       }`}
       draggable={!selectionMode}
       onDragStart={(e) => {
