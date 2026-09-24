@@ -3,14 +3,23 @@
  * 连接配置（密钥加密存储）/ 测试连接 / 启用与自动同步 / 状态与进度 / 批量下载
  */
 import React, { useEffect, useState } from 'react'
-import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } from 'lucide-react'
+import {
+  AlertTriangle,
+  CloudDownload,
+  CloudUpload,
+  HardDriveDownload,
+  Loader2,
+  RefreshCw
+} from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { useLibraryStore } from '../store/library'
 import { formatTime } from '../lib/utils'
+import { FUSE_MAX_COUNT, FUSE_MIN_COUNT, FUSE_RATIO } from '@shared/syncFuse'
 import type {
   SyncConfig,
   SyncHealthReport,
   SyncProgress,
+  SyncResultStats,
   SyncScope,
   SyncStatus
 } from '@shared/types'
@@ -36,6 +45,8 @@ export function SyncSection(): JSX.Element | null {
   const [testing, setTesting] = useState(false)
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [busyDownload, setBusyDownload] = useState(false)
+  /** #10 墓碑保险丝：同步因纯远端删除过多而暂停时，等待用户确认的统计 */
+  const [fuse, setFuse] = useState<NonNullable<SyncResultStats['fuse']> | null>(null)
   /** 配置加载失败信息（IPC 异常时展示错误态而非静默消失） */
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -57,7 +68,15 @@ export function SyncSection(): JSX.Element | null {
     const offDone = window.api.onSyncDone((r) => {
       setProgress(null)
       reload()
-      if (r.ok && r.stats) {
+      if (r.ok && r.stats?.fuse) {
+        // #10 保险丝触发：合并已暂停，本地保持同步前状态，等待用户确认
+        setFuse(r.stats.fuse)
+        toast(
+          `同步已暂停：远端请求删除 ${r.stats.fuse.deletedCount} 张本地图片，请在同步设置中确认`,
+          'error'
+        )
+      } else if (r.ok && r.stats) {
+        setFuse(null)
         const s = r.stats
         toast(
           `同步完成：拉取 ${s.pulled} 条，上传 ${s.uploaded} 张，耗时 ${(s.durationMs / 1000).toFixed(1)}s`
@@ -140,9 +159,10 @@ export function SyncSection(): JSX.Element | null {
     }
   }
 
-  const doSync = async (): Promise<void> => {
+  /** force = 用户已在保险丝确认卡片确认远端删除（#10） */
+  const doSync = async (force = false): Promise<void> => {
     try {
-      await window.api.syncNow()
+      await window.api.syncNow(force)
     } catch (err) {
       toast(`同步失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
@@ -347,6 +367,39 @@ export function SyncSection(): JSX.Element | null {
             范围仅限制图片上云与缩略图自动下载；记录 / 分类 / 标签 /
             相册等元数据始终全量同步，画廊中手动选择的批量下载不受范围限制。
           </p>
+        </div>
+      )}
+
+      {/* #10 远端墓碑保险丝：确认卡片（同步已暂停，本地保持同步前状态） */}
+      {fuse && (
+        <div className="card space-y-2 border-amber-300 bg-amber-50 p-3 dark:border-amber-700/60 dark:bg-amber-950/40">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <AlertTriangle size={14} />
+            远端删除保护已触发
+          </div>
+          <p className="text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+            检测到 <strong>{fuse.deletedCount}</strong> 张本地存活图片将被「纯远端墓碑」删除（本地共{' '}
+            {fuse.localCount} 张，占{' '}
+            {fuse.localCount > 0 ? Math.round((fuse.deletedCount / fuse.localCount) * 100) : 0}
+            %），超过安全阈值（≥{FUSE_MIN_COUNT} 张且占比 &gt;{Math.round(FUSE_RATIO * 100)}%，或 ≥
+            {FUSE_MAX_COUNT} 张）。合并已暂停，素材库保持同步前状态。
+          </p>
+          <p className="text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+            若确认这些删除来自你在其他设备上的有意操作（如批量清理），可继续同步；否则请先检查其他设备与远端桶是否异常。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" disabled={running} onClick={() => void doSync(true)}>
+              {running ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <AlertTriangle size={14} />
+              )}
+              确认删除并继续同步
+            </button>
+            <button className="btn-ghost" onClick={() => setFuse(null)}>
+              忽略
+            </button>
+          </div>
         </div>
       )}
 

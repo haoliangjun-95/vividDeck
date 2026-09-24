@@ -132,7 +132,8 @@ const api = {
       bucketCreated?: boolean
       error?: string
     }>,
-  syncNow: () => call<SyncResultStats>(IPC.SYNC_NOW),
+  /** force = 用户已确认远端删除（#10 墓碑保险丝确认卡片） */
+  syncNow: (force?: boolean) => call<SyncResultStats>(IPC.SYNC_NOW, { force: force === true }),
   syncDownload: (scope: SyncDownloadScope) =>
     call<{ downloaded: number; failed: number; cancelled?: boolean }>(IPC.SYNC_DOWNLOAD, scope),
   syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),

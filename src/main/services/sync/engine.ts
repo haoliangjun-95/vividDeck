@@ -20,6 +20,7 @@ import type {
   SyncStatus
 } from '@shared/types'
 import { imageInSyncScope } from '@shared/syncScope'
+import { remoteOnlyDeletions, tombstoneFuseTripped } from '@shared/syncFuse'
 import { JsonStore } from '../store'
 import { isRealFile, libraryDir } from '../paths'
 import { getLibrary, applySyncMerge, markLocalFile, onLibraryChanged } from '../library'
@@ -140,8 +141,8 @@ async function runPool<T>(
   await Promise.all(workers)
 }
 
-/** 完整同步（互斥） */
-export async function syncNow(): Promise<SyncResultStats> {
+/** 完整同步（互斥）；force = 用户已在保险丝确认卡片确认远端删除（#10） */
+export async function syncNow(opts?: { force?: boolean }): Promise<SyncResultStats> {
   if (running) throw new Error('同步正在进行中')
   if (devSyncBlocked()) throw new Error('开发模式下同步已禁用（设置 VD_ALLOW_DEV_SYNC=1 可开启）')
   const made = makeClient()
@@ -172,6 +173,28 @@ export async function syncNow(): Promise<SyncResultStats> {
 
     // 2) 合并
     const local = getLibrary()
+
+    // 1.5) #10 远端墓碑保险丝：纯远端墓碑删除超阈值 → 暂停合并（不落地/不上传/不下载），
+    // 本地保持同步前状态，返回 fuse 统计等待用户确认后以 force 重跑
+    if (opts?.force !== true) {
+      const fuseIds = remoteOnlyDeletions(
+        local.images,
+        listTombstones(),
+        manifests.map((m) => m.manifest)
+      )
+      if (tombstoneFuseTripped(local.images.length, fuseIds.length)) {
+        stats.fuse = { deletedCount: fuseIds.length, localCount: local.images.length }
+        stats.durationMs = Date.now() - t0
+        console.warn(
+          `[sync] 墓碑保险丝触发：${fuseIds.length}/${local.images.length} 张本地图片命中纯远端墓碑，已暂停合并等待确认`
+        )
+        engineStore.set({ lastSyncAt: Date.now(), lastError: null, lastResult: stats })
+        progress({ phase: 'finalizing', current: 1, total: 1, message: '同步已暂停：等待确认删除' })
+        broadcast(IPC_EVENTS.SYNC_DONE, { ok: true, stats })
+        return stats
+      }
+    }
+
     const merged = mergeAll({
       localImages: local.images,
       localCategories: local.categories,

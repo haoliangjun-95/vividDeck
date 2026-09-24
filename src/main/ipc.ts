@@ -368,7 +368,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.SYNC_NOW,
-    wrap(() => syncNow())
+    // #10：force=true 表示用户已在墓碑保险丝确认卡片上确认远端删除
+    wrap((payload?: { force?: boolean }) =>
+      syncNow(payload?.force === true ? { force: true } : undefined)
+    )
   )
 
   ipcMain.handle(

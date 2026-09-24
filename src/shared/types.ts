@@ -216,6 +216,11 @@ export interface SyncResultStats {
   downloaded: number
   conflicts: number
   durationMs: number
+  /**
+   * #10 远端墓碑保险丝：该字段存在表示本次同步检测到「纯远端墓碑」删除过多，
+   * 已暂停合并（本地保持同步前状态），等待用户在确认卡片中以 force 重跑。
+   */
+  fuse?: { deletedCount: number; localCount: number }
 }
 
 /** 同步进度事件（主进程 → 渲染层） */
