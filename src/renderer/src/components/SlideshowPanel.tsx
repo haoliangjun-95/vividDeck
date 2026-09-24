@@ -6,6 +6,7 @@ import { RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { useLibraryStore } from '../store/library'
 import type { IntervalUnit, MonitorInfo, MonitorOverride, SlideshowConfig, SlideshowOrder, SlideshowScope } from '@shared/types'
+import { matchAlbum } from '@shared/album'
 
 export function SlideshowPanel(): JSX.Element {
   const toast = useUIStore((s) => s.toast)
@@ -13,6 +14,7 @@ export function SlideshowPanel(): JSX.Element {
   const albums = useLibraryStore((s) => s.albums)
   const favoriteCount = useLibraryStore((s) => s.images.filter((img) => img.favorite).length)
   const totalCount = useLibraryStore((s) => s.images.length)
+  const images = useLibraryStore((s) => s.images)
   const [config, setConfig] = useState<SlideshowConfig | null>(null)
   const [monitors, setMonitors] = useState<MonitorInfo[]>([])
 
@@ -33,8 +35,24 @@ export function SlideshowPanel(): JSX.Element {
     }
   }
 
-  const poolSize =
-    config.scope.type === 'all' ? totalCount : config.scope.type === 'favorite' ? favoriteCount : undefined
+  // 池大小：全部/收藏用派生计数；分类/相册按范围实际过滤（相册复用 matchAlbum，与侧栏口径一致）
+  const poolSize = ((): number | undefined => {
+    const sc = config.scope
+    switch (sc.type) {
+      case 'all':
+        return totalCount
+      case 'favorite':
+        return favoriteCount
+      case 'category':
+        return images.filter((img) => img.categoryId === sc.categoryId).length
+      case 'album': {
+        const album = albums.find((a) => a.id === sc.albumId)
+        return album ? images.filter((img) => matchAlbum(img, album)).length : 0
+      }
+      default:
+        return undefined
+    }
+  })()
 
   const unitOptions: { value: IntervalUnit; label: string }[] = [
     { value: 'minute', label: '分钟' },

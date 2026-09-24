@@ -1,9 +1,10 @@
 /**
  * 侧边栏：视图切换（全部/收藏）、分类列表（拖拽归类目标 + 管理）、标签云、功能入口
  */
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { FolderOpen, Heart, History, Images, Layers, Monitor, Plus, Settings, Sparkles, Tag, Pencil } from 'lucide-react'
 import { matchAlbum } from '@shared/album'
+import type { SmartAlbum } from '@shared/types'
 import { AlbumEditorModal } from './AlbumEditorModal'
 import { useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
@@ -21,13 +22,16 @@ function NavItem({
   reorderHover,
   onRowDragOver,
   onRowDragLeave,
-  onRowDrop
+  onRowDrop,
+  onContextMenu
 }: {
   active: boolean
   icon: React.ReactNode
   label: string
   count?: number
   onClick: () => void
+  /** 右键菜单（智能相册管理入口） */
+  onContextMenu?: (e: React.MouseEvent) => void
   /** 作为拖拽归类目标（图片拖入） */
   onDrop?: (imageId: string) => void
   dropLabel?: string
@@ -53,6 +57,7 @@ function NavItem({
               : 'text-neutral-600 hover:bg-neutral-200/50 dark:text-neutral-300 dark:hover:bg-neutral-700/40'
       } ${rowDraggable ? 'cursor-grab' : ''}`}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       draggable={rowDraggable}
       onDragStart={onRowDragStart}
       onDragOver={(e) => {
@@ -101,10 +106,38 @@ export function Sidebar(): JSX.Element {
   const setFilter = useLibraryStore((s) => s.setFilter)
   const assignCategory = useLibraryStore((s) => s.assignCategory)
   const reorderCategories = useLibraryStore((s) => s.reorderCategories)
+  const deleteAlbum = useLibraryStore((s) => s.deleteAlbum)
   const drawer = useUIStore((s) => s.drawer)
   const openDrawer = useUIStore((s) => s.openDrawer)
+  const toast = useUIStore((s) => s.toast)
   const setCategoryManagerOpen = useUIStore((s) => s.setCategoryManagerOpen)
   const [albumEditorOpen, setAlbumEditorOpen] = useState(false)
+  /** 右键菜单正在编辑的相册（打开编辑器时传入 editing） */
+  const [editingAlbum, setEditingAlbum] = useState<SmartAlbum | null>(null)
+  /** 相册右键菜单（位置 + 目标相册） */
+  const [albumMenu, setAlbumMenu] = useState<{ album: SmartAlbum; x: number; y: number } | null>(null)
+
+  // Esc 关闭相册右键菜单
+  useEffect(() => {
+    if (!albumMenu) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setAlbumMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [albumMenu])
+
+  const confirmDeleteAlbum = (album: SmartAlbum): void => {
+    if (!confirm(`删除智能相册「${album.name}」？（不影响图片本身）`)) return
+    void deleteAlbum(album.id)
+      .then(() => {
+        if (filter.albumId === album.id) setFilter({ albumId: null })
+        toast('相册已删除', 'info')
+      })
+      .catch((err: unknown) =>
+        toast(`删除失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+      )
+  }
 
   // 分类拖拽排序状态
   const [dragCatId, setDragCatId] = React.useState<string | null>(null)
@@ -254,6 +287,10 @@ export function Sidebar(): JSX.Element {
                 label={album.name}
                 count={images.filter((img) => matchAlbum(img, album)).length}
                 onClick={() => setFilter({ albumId: filter.albumId === album.id ? null : album.id })}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setAlbumMenu({ album, x: e.clientX, y: e.clientY })
+                }}
                 onDrop={(imageId) => void assignCategory(imageId, null)}
                 dropLabel="移出分类"
               />
@@ -313,7 +350,51 @@ export function Sidebar(): JSX.Element {
         )}
       </div>
 
+      {/* 相册右键菜单：编辑/重命名、删除 */}
+      {albumMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setAlbumMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setAlbumMenu(null)
+            }}
+          />
+          <div
+            role="menu"
+            aria-label={`相册「${albumMenu.album.name}」操作`}
+            className="fixed z-50 min-w-[9rem] rounded-lg border border-neutral-200 bg-white py-1 text-sm shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
+            style={{ left: albumMenu.x, top: albumMenu.y }}
+          >
+            <button
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              onClick={() => {
+                setEditingAlbum(albumMenu.album)
+                setAlbumMenu(null)
+              }}
+            >
+              <Pencil size={13} />
+              编辑 / 重命名…
+            </button>
+            <button
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+              onClick={() => {
+                const album = albumMenu.album
+                setAlbumMenu(null)
+                confirmDeleteAlbum(album)
+              }}
+            >
+              删除相册
+            </button>
+          </div>
+        </>
+      )}
+
       {albumEditorOpen && <AlbumEditorModal onClose={() => setAlbumEditorOpen(false)} />}
+      {editingAlbum && <AlbumEditorModal editing={editingAlbum} onClose={() => setEditingAlbum(null)} />}
 
       {/* 功能入口 */}
       <div className="space-y-0.5 border-t border-neutral-200 p-2.5 dark:border-neutral-800">

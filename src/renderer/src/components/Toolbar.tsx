@@ -94,6 +94,17 @@ export function Toolbar(): JSX.Element {
         </button>
       )}
 
+      {/* 同步体检深链筛选（来自设置页体检报告，点击清除） */}
+      {filter.health && (
+        <button
+          className="btn-ghost border border-amber-300 !text-amber-600 dark:border-amber-800 dark:!text-amber-400"
+          onClick={() => setFilter({ health: null })}
+          title="点击清除体检筛选，回到全部图片"
+        >
+          体检：{filter.health.label} × {filter.health.ids.length} · 清除
+        </button>
+      )}
+
       {/* 批量选择开关（选择模式下高亮，Esc 退出） */}
       <button
         className={`${selectionMode ? 'btn bg-indigo-600 text-white hover:bg-indigo-500' : 'btn-ghost border border-neutral-300 dark:border-neutral-700'}`}

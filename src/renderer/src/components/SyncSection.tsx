@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
+import { useLibraryStore } from '../store/library'
 import { formatTime } from '../lib/utils'
 import type { SyncConfig, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
 import { formatBytes } from '../lib/utils'
@@ -26,13 +27,19 @@ export function SyncSection(): JSX.Element | null {
   const [testing, setTesting] = useState(false)
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [busyDownload, setBusyDownload] = useState(false)
+  /** 配置加载失败信息（IPC 异常时展示错误态而非静默消失） */
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const reload = (): void => {
-    void window.api.getSyncInfo().then((info) => {
-      setConfig(info.config)
-      setStatus(info.status)
-      setSecretSet(info.secretSet)
-    })
+    window.api
+      .getSyncInfo()
+      .then((info) => {
+        setConfig(info.config)
+        setStatus(info.status)
+        setSecretSet(info.secretSet)
+        setLoadError(null)
+      })
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)))
   }
 
   useEffect(() => {
@@ -54,7 +61,24 @@ export function SyncSection(): JSX.Element | null {
     }
   }, [toast])
 
-  if (!config) return null
+  if (!config) {
+    // 加载失败时给出可读错误态（此前静默返回 null，整个同步区消失无从排查）
+    if (!loadError) return null
+    return (
+      <section className="space-y-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <CloudUpload size={14} />
+          多设备同步（MinIO）
+        </div>
+        <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/50 dark:text-red-400">
+          同步配置加载失败：{loadError}
+          <button className="ml-2 underline hover:no-underline" onClick={reload}>
+            重试
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   const patch = async (p: Partial<SyncConfig>): Promise<void> => {
     setConfig(await window.api.setSyncConfig(p))
@@ -309,10 +333,19 @@ export function SyncSection(): JSX.Element | null {
 /** 同步体检：三方对账结果 + 修复动作 + 完整性校验 + 下载容量预估 */
 function HealthCheckSection(): JSX.Element | null {
   const toast = useUIStore((st) => st.toast)
+  const closeDrawer = useUIStore((st) => st.closeDrawer)
+  const setFilter = useLibraryStore((st) => st.setFilter)
   const [report, setReport] = useState<SyncHealthReport | null>(null)
   const [checking, setChecking] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [estimate, setEstimate] = useState<{ count: number; sizeBytes: number } | null>(null)
+
+  /** 深链：画廊过滤到该问题影响的图片，并关闭设置抽屉便于查看 */
+  const openHealthFilter = (label: string, ids: string[]): void => {
+    setFilter({ health: { label, ids } })
+    closeDrawer()
+    toast(`已在画廊过滤出「${label}」${ids.length} 张`)
+  }
 
   const run = async (): Promise<void> => {
     setChecking(true)
@@ -336,7 +369,14 @@ function HealthCheckSection(): JSX.Element | null {
     )
   }
 
-  const rows: { label: string; count: number; hint: string; action?: { label: string; onClick: () => void } }[] = []
+  const rows: {
+    label: string
+    count: number
+    hint: string
+    action?: { label: string; onClick: () => void }
+    /** 点击问题名跳转画廊查看受影响图片 */
+    deepLink?: { label: string; ids: string[] }
+  }[] = []
   if (report) {
     if (report.cloudOrphanObjects.length > 0) {
       rows.push({
@@ -359,7 +399,8 @@ function HealthCheckSection(): JSX.Element | null {
       rows.push({
         label: '云端缺失原图',
         count: report.missingBinaries.length,
-        hint: '这些图片只有元数据，桶中没有文件（需在有原图的设备重新上传）'
+        hint: '这些图片只有元数据，桶中没有文件（需在有原图的设备重新上传）',
+        deepLink: { label: '云端缺失原图', ids: report.missingBinaries.map((m) => m.id) }
       })
     }
     if (report.localBroken.length > 0) {
@@ -367,6 +408,7 @@ function HealthCheckSection(): JSX.Element | null {
         label: '本地文件断链',
         count: report.localBroken.length,
         hint: '记录标记为本地但文件丢失；可标记回云端后重新下载',
+        deepLink: { label: '本地文件断链', ids: report.localBroken.map((b) => b.id) },
         action: {
           label: `修复 ${report.localBroken.length} 条`,
           onClick: () => {
@@ -379,7 +421,12 @@ function HealthCheckSection(): JSX.Element | null {
       })
     }
     if (report.missingThumbs.length > 0) {
-      rows.push({ label: '缩略图缺失', count: report.missingThumbs.length, hint: '本地与云端均无缩略图（打开图片后自动补生成）' })
+      rows.push({
+        label: '缩略图缺失',
+        count: report.missingThumbs.length,
+        hint: '本地与云端均无缩略图（打开图片后自动补生成）',
+        deepLink: { label: '缩略图缺失', ids: report.missingThumbs.map((m) => m.id) }
+      })
     }
     if (report.expiredTombstonesCleaned.length > 0) {
       rows.push({ label: '已清理过期墓碑', count: report.expiredTombstonesCleaned.length, hint: '90 天 TTL 自动清理' })
@@ -411,7 +458,21 @@ function HealthCheckSection(): JSX.Element | null {
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-2 text-[11px]">
           <div className="min-w-0 flex-1">
-            <span className="font-medium text-amber-600 dark:text-amber-400">{r.label} × {r.count}</span>
+            <span className="font-medium text-amber-600 dark:text-amber-400">
+              {r.deepLink ? (
+                <button
+                  className="underline decoration-dotted underline-offset-2 hover:text-amber-700 dark:hover:text-amber-300"
+                  title="在画廊中过滤查看这些图片"
+                  onClick={() => r.deepLink && openHealthFilter(r.deepLink.label, r.deepLink.ids)}
+                >
+                  {r.label} × {r.count}
+                </button>
+              ) : (
+                <>
+                  {r.label} × {r.count}
+                </>
+              )}
+            </span>
             <span className="ml-1 text-neutral-400">{r.hint}</span>
           </div>
           {r.action && (

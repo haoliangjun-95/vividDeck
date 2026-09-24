@@ -3,12 +3,12 @@
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Monitor, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react'
+import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Loader2, Monitor, Pencil, RefreshCw, Tag as TagIcon, Trash2, X } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
 import { Modal } from './ui'
-import type { ImageItem } from '@shared/types'
+import type { ImageItem, SyncProgress } from '@shared/types'
 
 
 /** 卡片信息栏：分类徽章 + 标签 chips */
@@ -476,6 +476,10 @@ function BatchActionBar({
   onOpenTagPicker,
   onDownloadSelected,
   downloading,
+  progress,
+  onCancelDownload,
+  retryCount,
+  onRetry,
   cloudCount,
   onDeleteRequest
 }: {
@@ -483,6 +487,12 @@ function BatchActionBar({
   onOpenTagPicker: () => void
   onDownloadSelected: () => void
   downloading: boolean
+  /** 批量下载进度（downloading 阶段广播） */
+  progress: SyncProgress | null
+  onCancelDownload: () => void
+  /** 上次下载失败/取消后剩余可重试数量 */
+  retryCount: number
+  onRetry: () => void
   cloudCount: number
   onDeleteRequest: () => void
 }) {
@@ -529,11 +539,36 @@ function BatchActionBar({
         <TagIcon size={13} />
         加标签…
       </button>
-      {cloudCount > 0 && (
-        <button className="btn-ghost !py-1 text-xs" onClick={onDownloadSelected} title={`下载选中图片的原图到本地（${cloudCount} 张云端）`}>
-          <CloudDownload size={13} />
-          {downloading ? '下载中…' : `下载原图(${cloudCount})`}
-        </button>
+      {downloading ? (
+        <span className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-300">
+          <Loader2 size={13} className="animate-spin" />
+          {progress && progress.total > 0 ? `下载中 ${progress.current}/${progress.total}` : '下载中…'}
+          <button
+            className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
+            onClick={onCancelDownload}
+          >
+            取消
+          </button>
+        </span>
+      ) : (
+        <>
+          {cloudCount > 0 && (
+            <button className="btn-ghost !py-1 text-xs" onClick={onDownloadSelected} title={`下载选中图片的原图到本地（${cloudCount} 张云端）`}>
+              <CloudDownload size={13} />
+              下载原图({cloudCount})
+            </button>
+          )}
+          {retryCount > 0 && (
+            <button
+              className="btn-ghost !py-1 text-xs !text-amber-600 dark:!text-amber-400"
+              onClick={onRetry}
+              title="重试上次失败/取消的下载"
+            >
+              <RefreshCw size={13} />
+              重试失败({retryCount})
+            </button>
+          )}
+        </>
       )}
       <button
         className="btn-danger !py-1 text-xs"
@@ -808,28 +843,46 @@ export function GalleryGrid(): JSX.Element {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteRequestIds, setDeleteRequestIds] = useState<string[] | null>(null)
   const [bulkDownloading, setBulkDownloading] = useState(false)
+  const [dlProgress, setDlProgress] = useState<SyncProgress | null>(null)
+  /** 下载后仍未成功的 id（操作栏提供重试入口） */
+  const [retryIds, setRetryIds] = useState<string[] | null>(null)
   const allImages = useLibraryStore((s) => s.images)
   const cloudCount = useUIStore((s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length)
 
-  /** 批量下载选中图片的云端原图（支持取消） */
-  const downloadSelected = async (): Promise<void> => {
-    const ids = useUIStore.getState().selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile)
-    if (ids.length === 0) return
+  // 批量下载进度（主进程 downloadScope 以 downloading 阶段广播）
+  useEffect(() => {
+    if (!bulkDownloading) return
+    const off = window.api.onSyncProgress((p) => {
+      if (p.phase === 'downloading') setDlProgress(p)
+    })
+    return off
+  }, [bulkDownloading])
+
+  /** 批量下载图片的云端原图（主进程并发 3、可取消；失败/取消后可重试） */
+  const downloadSelected = async (ids?: string[]): Promise<void> => {
+    const known = useLibraryStore.getState().images
+    const targets = (ids ?? useUIStore.getState().selectedIds).filter((id) => !known.find((i) => i.id === id)?.localFile)
+    if (targets.length === 0) return
     setBulkDownloading(true)
-    let done = 0
-    let failed = 0
-    for (const id of ids) {
-      try {
-        await window.api.syncEnsureLocal(id)
-        done++
-      } catch {
-        failed++
-      }
+    setRetryIds(null)
+    setDlProgress(null)
+    try {
+      const r = await window.api.syncDownload({ type: 'ids', ids: targets })
+      await useLibraryStore.getState().load()
+      // 下载后仍是云端 = 未成功，留给重试入口
+      const now = useLibraryStore.getState().images
+      const stillMissing = targets.filter((id) => !now.find((i) => i.id === id)?.localFile)
+      setRetryIds(stillMissing.length > 0 ? stillMissing : null)
+      if (r.cancelled) toast(`下载已取消：完成 ${r.downloaded} 张`, 'info')
+      else if (r.failed > 0) toast(`下载完成 ${r.downloaded} 张，失败 ${r.failed} 张，可在操作栏重试`, 'info')
+      else toast(`已下载 ${r.downloaded} 张到本地`)
+    } catch (err) {
+      setRetryIds(targets)
+      toast(`下载失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setBulkDownloading(false)
+      setDlProgress(null)
     }
-    setBulkDownloading(false)
-    if (failed > 0) toast(`下载完成 ${done} 张，失败 ${failed} 张`, 'info')
-    else toast(`已下载 ${done} 张到本地`)
-    void useLibraryStore.getState().load()
   }
 
   // 虚拟化状态：滚动偏移 + 容器尺寸（rAF 节流更新，避免每像素 setState）
@@ -967,6 +1020,12 @@ export function GalleryGrid(): JSX.Element {
         onOpenTagPicker={() => setTagPickerOpen(true)}
         onDownloadSelected={() => void downloadSelected()}
         downloading={bulkDownloading}
+        progress={dlProgress}
+        onCancelDownload={() => {
+          void window.api.syncCancelDownload().then(() => toast('已发送取消信号，正在停止下载…', 'info'))
+        }}
+        retryCount={retryIds?.length ?? 0}
+        onRetry={() => void downloadSelected(retryIds ?? undefined)}
         cloudCount={cloudCount}
         onDeleteRequest={() => setDeleteConfirmOpen(true)}
       />

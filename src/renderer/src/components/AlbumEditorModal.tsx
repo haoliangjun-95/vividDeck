@@ -39,6 +39,10 @@ export function AlbumEditorModal({
   const [name, setName] = useState(editing?.name ?? '')
   const [rules, setRules] = useState<SmartAlbumRules>(editing?.rules ?? initialRules ?? {})
   const [count, setCount] = useState<number | null>(null)
+  // 标签匹配模式：any=任一命中（并集）/ all=全部命中（交集）；初值取自已编辑相册或入口规则
+  const [tagMode, setTagMode] = useState<'all' | 'any'>(
+    (editing?.rules ?? initialRules ?? {}).tagsAll?.length ? 'all' : 'any'
+  )
 
   // 实时匹配计数（防抖 400ms）
   useEffect(() => {
@@ -55,16 +59,27 @@ export function AlbumEditorModal({
     return cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]
   }
 
+  // 切换交集/并集：把已选标签迁移到目标字段并清空另一字段，避免语义漂移
+  const switchTagMode = (mode: 'all' | 'any'): void => {
+    setTagMode(mode)
+    setRules((r) =>
+      mode === 'all'
+        ? { ...r, tagsAll: r.tagsAny ?? [], tagsAny: undefined }
+        : { ...r, tagsAny: r.tagsAll ?? [], tagsAll: undefined }
+    )
+  }
+
   const save = async (): Promise<void> => {
     if (!name.trim()) return
     try {
       if (editing) {
         await updateAlbum(editing.id, { name: name.trim(), rules })
       } else {
-        await addAlbum(name.trim(), rules)
+        // 创建后自动选中该相册，画廊立即过滤到新相册内容
+        const newId = await addAlbum(name.trim(), rules)
+        setFilter({ albumId: newId })
       }
       toast(editing ? '相册已更新' : `已创建智能相册「${name.trim()}」`)
-      if (!editing) setFilter({ albumId: null })
       onClose()
     } catch (err) {
       toast(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
@@ -88,13 +103,32 @@ export function AlbumEditorModal({
 
         {tags.length > 0 && (
           <div>
-            <div className="mb-1.5 text-xs font-medium">标签（任一命中）</div>
-            <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
-              {tags.map((t) => (
-                <button key={t} className={chip((rules.tagsAny ?? []).includes(t))} onClick={() => patch({ tagsAny: toggleIn(rules.tagsAny, t) })}>
-                  #{t}
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-medium">标签（{tagMode === 'all' ? '全部命中' : '任一命中'}）</span>
+              <div className="flex gap-1">
+                <button type="button" className={chip(tagMode === 'any')} onClick={() => switchTagMode('any')}>
+                  任一
                 </button>
-              ))}
+                <button type="button" className={chip(tagMode === 'all')} onClick={() => switchTagMode('all')}>
+                  全部
+                </button>
+              </div>
+            </div>
+            <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
+              {tags.map((t) => {
+                const active = tagMode === 'all' ? rules.tagsAll : rules.tagsAny
+                return (
+                  <button
+                    key={t}
+                    className={chip((active ?? []).includes(t))}
+                    onClick={() =>
+                      patch(tagMode === 'all' ? { tagsAll: toggleIn(rules.tagsAll, t) } : { tagsAny: toggleIn(rules.tagsAny, t) })
+                    }
+                  >
+                    #{t}
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}

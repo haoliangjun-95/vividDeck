@@ -32,7 +32,8 @@ interface LibraryState {
   removeMany: (ids: string[]) => Promise<void>
   /** 批量：按图设置标签（增/删混合，单次事务） */
   setTagsMany: (entries: { id: string; tags: string[] }[]) => Promise<void>
-  addAlbum: (name: string, rules: SmartAlbumRules) => Promise<void>
+  /** 新建相册；resolve 新相册 id（用于创建后自动选中），失败时 reject */
+  addAlbum: (name: string, rules: SmartAlbumRules) => Promise<string | null>
   updateAlbum: (id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>) => Promise<void>
   deleteAlbum: (id: string) => Promise<void>
   addCategory: (name: string) => Promise<void>
@@ -50,7 +51,8 @@ const DEFAULT_FILTER: LibraryFilter = {
   albumId: null,
   minWidth: 0,
   minSizeMB: 0,
-  maxSizeMB: 0
+  maxSizeMB: 0,
+  health: null
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -126,8 +128,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   addAlbum: async (name, rules) => {
+    const before = new Set(get().albums.map((a) => a.id))
     const data = await window.api.addAlbum(name, rules)
     get().applyData(data)
+    return data.albums.find((a) => !before.has(a.id))?.id ?? null
   },
 
   updateAlbum: async (id, patch) => {
@@ -169,10 +173,13 @@ export function selectFilteredImages(state: LibraryState): ImageItem[] {
   const { images, filter, sort } = state
   const kw = filter.keyword.trim().toLowerCase()
   const album = state.albums.find((a) => a.id === filter.albumId)
+  // 体检深链：命中报告中的 id 集合（空集合 = 无匹配）
+  const healthIds = filter.health ? new Set(filter.health.ids) : null
 
   const filtered = images.filter((img) => {
     // 智能相册规则（与其他条件 AND 叠加）
     if (album && !matchAlbum(img, album)) return false
+    if (healthIds && !healthIds.has(img.id)) return false
     if (filter.categoryId === 'favorites') {
       if (!img.favorite) return false
     } else if (filter.categoryId === 'uncategorized') {

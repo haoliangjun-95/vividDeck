@@ -332,8 +332,10 @@ export async function ensureLocal(imageId: string): Promise<string> {
 
 /** 批量下载（离线准备；并发 3、可取消） */
 export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloaded: number; failed: number; cancelled?: boolean }> {
+  const idSet = scope.type === 'ids' ? new Set(scope.ids ?? []) : null
   const images = getLibrary().images.filter((img) => {
     if (img.localFile) return false
+    if (idSet) return idSet.has(img.id)
     if (scope.type === 'favorite') return img.favorite
     if (scope.type === 'category') return img.categoryId === scope.categoryId
     return true

@@ -105,7 +105,8 @@ const api = {
   testSync: () =>
     ipcRenderer.invoke(IPC.SYNC_TEST) as Promise<{ ok: boolean; bucketCreated?: boolean; error?: string }>,
   syncNow: () => call<SyncResultStats>(IPC.SYNC_NOW),
-  syncDownload: (scope: SyncDownloadScope) => call<{ downloaded: number; failed: number }>(IPC.SYNC_DOWNLOAD, scope),
+  syncDownload: (scope: SyncDownloadScope) =>
+    call<{ downloaded: number; failed: number; cancelled?: boolean }>(IPC.SYNC_DOWNLOAD, scope),
   syncEnsureLocal: (imageId: string) => call<{ path: string }>(IPC.SYNC_ENSURE_LOCAL, { imageId }),
   syncCancelDownload: () => ipcRenderer.invoke(IPC.SYNC_CANCEL_DOWNLOAD) as Promise<{ ok: boolean }>,
   syncHealthCheck: () => call<import('@shared/types').SyncHealthReport>(IPC.SYNC_HEALTH_CHECK),

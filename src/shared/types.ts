@@ -269,8 +269,10 @@ export interface SyncHealthReport {
 
 /** 批量下载范围 */
 export interface SyncDownloadScope {
-  type: 'all' | 'category' | 'favorite'
+  type: 'all' | 'category' | 'favorite' | 'ids'
   categoryId?: string
+  /** type === 'ids' 时的图片 ID 列表（画廊批量下载选中项） */
+  ids?: string[]
 }
 
 /** 导入结果统计 */
@@ -294,6 +296,8 @@ export interface LibraryFilter {
   /** 文件大小下/上限（MB），0 为不限 */
   minSizeMB: number
   maxSizeMB: number
+  /** 同步体检深链：仅显示指定 id 集合（来自体检报告），null 为不限 */
+  health: { label: string; ids: string[] } | null
 }
 
 /** 裁剪参数（基于原图像素坐标） */
