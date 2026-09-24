@@ -22,6 +22,7 @@ asarUnpack:
   - '**/node_modules/sharp/**'
   - '**/node_modules/@img/**'
   - '**/node_modules/wallpaper/**'
+  - '**/node_modules/better-sqlite3/**'
 
 # 打进安装包的运行时依赖（package.json dependencies）
 # electron-builder 自动按 dependencies 收录，无需额外配置

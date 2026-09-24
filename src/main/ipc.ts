@@ -72,7 +72,7 @@ import {
   verifyIntegrity
 } from './services/sync/health'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
-import { flushLibrary } from './services/library'
+import { checkpointLibrary, flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { flushSlideshow } from './services/slideshow'
 
@@ -164,6 +164,8 @@ export function registerIpcHandlers(): void {
     flushHistory()
     flushSlideshow()
     flushSettings()
+    // A5：WAL 检查点截断 —— library.db 的未合并日志并入主文件，复制出的副本才自包含
+    checkpointLibrary()
 
     // 2) 整体复制（跨卷亦可；大素材库耗时较长，由渲染层展示迁移中状态）
     await fsp.cp(source, target, { recursive: true, force: true })

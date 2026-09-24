@@ -19,9 +19,9 @@ import {
   type ImportResult,
   type LibraryData
 } from '@shared/types'
-import { JsonStore } from './store'
+import { LibraryDbStore } from './db'
 import { collectImageFiles, genId, hashFile, sanitizeFileName, splitFileName } from '../utils/fs'
-import { isRealFile, libraryDir, trashStagingDir } from './paths'
+import { dataDir, isRealFile, libraryDir, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
 import { getDeviceId } from './device'
@@ -29,13 +29,12 @@ import { matchAlbum } from '@shared/album'
 import { addTombstone, removeTombstones } from './tombstones'
 import type { SyncImageRecord } from '@shared/types'
 
-// ---------- 持久化 ----------
-const libraryStore = new JsonStore<LibraryData>('library', {
-  images: [],
-  categories: [],
-  tags: [],
-  albums: []
-})
+// ---------- 持久化（A5：SQLite，首次启动自动迁移旧 library.json 并保留 .migrated 备份） ----------
+const libraryStore = new LibraryDbStore(
+  path.join(dataDir(), 'library.db'),
+  { images: [], categories: [], tags: [], albums: [] },
+  path.join(dataDir(), 'library.json')
+)
 
 /** 素材库变化监听（同步引擎注册，用于防抖触发增量同步） */
 const changeListeners = new Set<() => void>()
@@ -725,6 +724,11 @@ export function toSyncRecord(img: ImageItem): SyncImageRecord {
 /** 退出前落盘 */
 export function flushLibrary(): void {
   libraryStore.flush()
+}
+
+/** WAL 检查点截断：更换存储位置整目录复制前调用，保证副本自包含（数据全部在主 db 文件内） */
+export function checkpointLibrary(): void {
+  libraryStore.checkpoint()
 }
 
 export type { Category }
