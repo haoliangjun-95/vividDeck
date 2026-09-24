@@ -74,7 +74,7 @@ vi.mock('@main/services/sync/store', () => ({
 }))
 
 vi.mock('@main/services/sync/client', () => ({
-  createClient: () => ({
+  getClient: () => ({
     listObjectsV2: (_bucket: string, prefix: string) =>
       fakeObjectStream(h.bucketKeys.filter((k) => k.startsWith(prefix))),
     removeObjects: (_bucket: string, keys: string[]): Promise<void> => {

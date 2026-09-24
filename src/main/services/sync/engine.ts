@@ -108,7 +108,8 @@ function devSyncBlocked(): boolean {
 function makeClient(): { cfg: SyncConfig; client: import('minio').Client } | null {
   const cfg = getSyncConfig()
   if (!isConfigured()) return null
-  return { cfg, client: client.createClient(cfg, loadSecret()) }
+  // A3：单例客户端 —— 同一连接身份复用实例，省去每轮同步重建连接池
+  return { cfg, client: client.getClient(cfg, loadSecret()) }
 }
 
 export function getStatus(): SyncStatus {

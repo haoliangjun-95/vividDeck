@@ -35,10 +35,10 @@ export async function resolveMediaPath(
       // 本地无缩略图且文件在云端：尝试从远端拉缩略图（小文件，画廊秒开）
       if (!image.localFile && syncReady()) {
         const { loadSecret } = await import('./services/sync/store')
-        const { createClient, downloadFile } = await import('./services/sync/client')
+        const { getClient, downloadFile } = await import('./services/sync/client')
         const cfg = getSyncConfig()
         await downloadFile(
-          createClient(cfg, loadSecret()),
+          getClient(cfg, loadSecret()),
           cfg.bucket,
           `thumbs/${path.basename(local)}`,
           local

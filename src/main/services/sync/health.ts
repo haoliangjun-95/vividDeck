@@ -14,12 +14,13 @@ import { isRealFile } from '../paths'
 import { thumbPath } from '../thumbnails'
 import { pruneExpiredTombstones } from '../tombstones'
 import { getSyncConfig, hasSecret, loadSecret } from './store'
-import { createClient, objectExists } from './client'
+import { getClient, objectExists } from './client'
 
 function configuredClient(): { client: import('minio').Client; bucket: string } | null {
   const cfg = getSyncConfig()
   if (!cfg.endpoint || !cfg.accessKey || !hasSecret()) return null
-  return { client: createClient(cfg, loadSecret()), bucket: cfg.bucket }
+  // A3：单例客户端 —— 与 engine 共享同一连接身份实例
+  return { client: getClient(cfg, loadSecret()), bucket: cfg.bucket }
 }
 
 /** 云端缺失/本地断链等的按需完整性校验：本地文件 sha1 vs 记录哈希 */
