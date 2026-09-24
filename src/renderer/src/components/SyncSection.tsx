@@ -7,7 +7,13 @@ import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } fro
 import { useUIStore } from '../store/ui'
 import { useLibraryStore } from '../store/library'
 import { formatTime } from '../lib/utils'
-import type { SyncConfig, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
+import type {
+  SyncConfig,
+  SyncHealthReport,
+  SyncProgress,
+  SyncScope,
+  SyncStatus
+} from '@shared/types'
 import { formatBytes } from '../lib/utils'
 
 const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
@@ -20,6 +26,9 @@ const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
 
 export function SyncSection(): JSX.Element | null {
   const toast = useUIStore((s) => s.toast)
+  // #9 选择性同步：范围勾选列表的数据源（素材库分类与智能相册）
+  const categories = useLibraryStore((s) => s.categories)
+  const albums = useLibraryStore((s) => s.albums)
   const [config, setConfig] = useState<SyncConfig | null>(null)
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [secretSet, setSecretSet] = useState(false)
@@ -85,6 +94,28 @@ export function SyncSection(): JSX.Element | null {
   const patch = async (p: Partial<SyncConfig>): Promise<void> => {
     setConfig(await window.api.setSyncConfig(p))
     reload()
+  }
+
+  // #9 同步范围：主进程 JsonStore 已做默认值浅合并，这里再兜底一次防旧数据
+  const scope: SyncScope = config.scope ?? { type: 'all' }
+
+  const setScopeType = (type: SyncScope['type']): void => {
+    if (scope.type === type) return
+    const next: SyncScope =
+      type === 'all'
+        ? { type: 'all' }
+        : type === 'categories'
+          ? { type: 'categories', ids: [] }
+          : { type: 'albums', ids: [] }
+    void patch({ scope: next })
+  }
+
+  const toggleScopeId = (id: string): void => {
+    if (scope.type === 'all') return
+    const ids = scope.ids.includes(id) ? scope.ids.filter((x) => x !== id) : [...scope.ids, id]
+    const next: SyncScope =
+      scope.type === 'categories' ? { type: 'categories', ids } : { type: 'albums', ids }
+    void patch({ scope: next })
   }
 
   const saveAndTest = async (): Promise<void> => {
@@ -263,6 +294,59 @@ export function SyncSection(): JSX.Element | null {
             />
             自动同步（应用启动时 + 素材变动 30 秒后；关闭则仅手动触发）
           </label>
+        </div>
+      )}
+
+      {/* 同步范围（#9）：只约束图片上云与缩略图自动下载，元数据始终全量 */}
+      {status?.configured && (
+        <div className="card space-y-2 p-3">
+          <div className="text-sm">同步范围</div>
+          <div className="flex flex-wrap gap-3">
+            {(
+              [
+                ['all', '全部内容'],
+                ['categories', '按分类'],
+                ['albums', '按相册']
+              ] as const
+            ).map(([type, label]) => (
+              <label key={type} className="flex cursor-pointer items-center gap-1.5 text-xs">
+                <input
+                  type="radio"
+                  name="sync-scope-type"
+                  className="h-3.5 w-3.5 accent-indigo-600"
+                  checked={scope.type === type}
+                  onChange={() => setScopeType(type)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          {scope.type === 'categories' && (
+            <ScopeCheckList
+              items={categories.map((c) => ({ id: c.id, name: c.name }))}
+              selected={scope.ids}
+              emptyHint="暂无分类，请先在侧栏创建"
+              onToggle={toggleScopeId}
+            />
+          )}
+          {scope.type === 'albums' && (
+            <ScopeCheckList
+              items={albums.map((a) => ({ id: a.id, name: a.name }))}
+              selected={scope.ids}
+              emptyHint="暂无智能相册，请先在侧栏创建"
+              onToggle={toggleScopeId}
+            />
+          )}
+          {scope.type !== 'all' && (
+            <p className="text-[11px] text-neutral-400">
+              已选 {scope.ids.length} 项
+              {scope.ids.length === 0 ? '（当前范围下不会传输任何图片）' : ''}
+            </p>
+          )}
+          <p className="text-[11px] leading-relaxed text-neutral-400">
+            范围仅限制图片上云与缩略图自动下载；记录 / 分类 / 标签 /
+            相册等元数据始终全量同步，画廊中手动选择的批量下载不受范围限制。
+          </p>
         </div>
       )}
 
@@ -558,6 +642,38 @@ function HealthCheckSection(): JSX.Element | null {
       >
         {verifying ? '校验中…' : '校验本地文件完整性（内容哈希比对）'}
       </button>
+    </div>
+  )
+}
+
+/** 同步范围勾选列表（#9：分类 / 相册两种维度共用） */
+function ScopeCheckList({
+  items,
+  selected,
+  emptyHint,
+  onToggle
+}: {
+  items: { id: string; name: string }[]
+  selected: string[]
+  emptyHint: string
+  onToggle: (id: string) => void
+}): JSX.Element {
+  if (items.length === 0) {
+    return <div className="text-xs text-neutral-400">{emptyHint}</div>
+  }
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-neutral-200 p-2 dark:border-neutral-700">
+      {items.map((it) => (
+        <label key={it.id} className="flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-indigo-600"
+            checked={selected.includes(it.id)}
+            onChange={() => onToggle(it.id)}
+          />
+          {it.name}
+        </label>
+      ))}
     </div>
   )
 }

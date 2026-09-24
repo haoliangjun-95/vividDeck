@@ -173,6 +173,14 @@ export interface AppSettings {
 // ==================== 二期：MinIO 多设备同步 ====================
 
 /** MinIO 连接配置（secretKey 经 safeStorage 加密单独存储，不在此明文） */
+/**
+ * 选择性同步范围（#9）：只约束二进制原图与缩略图的上传/自动下载，
+ * 元数据（记录/分类/标签/相册/墓碑）清单始终全量同步；
+ * 画廊手动选中的批量下载不受范围限制（显式操作优先）。
+ */
+export type SyncScope =
+  { type: 'all' } | { type: 'categories'; ids: string[] } | { type: 'albums'; ids: string[] }
+
 export interface SyncConfig {
   enabled: boolean
   /** 服务地址（域名或 IP，不含协议） */
@@ -183,6 +191,8 @@ export interface SyncConfig {
   accessKey: string
   /** 启动与变更后自动同步（关闭则仅手动触发） */
   autoSync: boolean
+  /** 选择性同步范围（#9）；旧配置缺失时按 all 处理（JsonStore 默认值浅合并） */
+  scope: SyncScope
 }
 
 /** 同步状态快照（设置页展示用） */

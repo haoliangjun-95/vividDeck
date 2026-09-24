@@ -17,7 +17,9 @@ const DEFAULT_CONFIG: SyncConfig = {
   useSSL: false,
   bucket: 'vividdeck',
   accessKey: '',
-  autoSync: true
+  autoSync: true,
+  // #9 选择性同步：旧配置文件无此字段时由 JsonStore 浅合并回落全量
+  scope: { type: 'all' }
 }
 
 const syncConfigStore = new JsonStore<SyncConfig>('sync-config', DEFAULT_CONFIG)

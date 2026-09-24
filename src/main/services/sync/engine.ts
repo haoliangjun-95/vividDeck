@@ -19,6 +19,7 @@ import type {
   SyncResultStats,
   SyncStatus
 } from '@shared/types'
+import { imageInSyncScope } from '@shared/syncScope'
 import { JsonStore } from '../store'
 import { isRealFile, libraryDir } from '../paths'
 import { getLibrary, applySyncMerge, markLocalFile, onLibraryChanged } from '../library'
@@ -200,7 +201,11 @@ export async function syncNow(): Promise<SyncResultStats> {
     }
 
     // 4) 下载远端新图的缩略图（小文件、并发 4；失败不阻塞同步）
-    const cloudImages = merged.images.filter((img) => !img.localFile)
+    // #9 选择性同步：范围外的云端图不自动拉取缩略图（画廊手动下载不受限）
+    const scopeAlbums = merged.albums ?? []
+    const cloudImages = merged.images.filter(
+      (img) => !img.localFile && imageInSyncScope(img, cfg.scope, scopeAlbums)
+    )
     if (cloudImages.length > 0) {
       progress({
         phase: 'downloading',
@@ -232,7 +237,10 @@ export async function syncNow(): Promise<SyncResultStats> {
     // 5) 上传缺失的二进制与缩略图（并发 2）
     const uploaded = getUploadedSet()
     const withFile = merged.images.filter((img) => img.localFile && isRealFile(img.path))
-    const needUpload = withFile.filter((img) => !uploaded.has(img.hash))
+    // #9 选择性同步：范围外的本地图片不上传二进制（元数据清单仍全量发布）
+    const needUpload = withFile.filter(
+      (img) => !uploaded.has(img.hash) && imageInSyncScope(img, cfg.scope, scopeAlbums)
+    )
     if (needUpload.length > 0) {
       progress({ phase: 'uploading', current: 0, total: needUpload.length, message: '' })
       let done = 0
