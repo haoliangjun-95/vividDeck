@@ -23,6 +23,7 @@ import {
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
+import { computeVirtualWindow } from '../lib/virtualGrid'
 import { Modal } from './ui'
 import type { ImageItem, SyncProgress } from '@shared/types'
 
@@ -1041,43 +1042,23 @@ export function GalleryGrid(): JSX.Element {
     )
   }
 
-  // 窗口化计算：列数与卡片行高（与 CSS 断点保持一致）
-  const GAP = 12
-  const PAD = 16
-  const cols =
-    viewport.w >= 1536
-      ? 6
-      : viewport.w >= 1280
-        ? 5
-        : viewport.w >= 1024
-          ? 4
-          : viewport.w >= 640
-            ? 3
-            : 2
-  const colW = (viewport.w - PAD * 2 - GAP * (cols - 1)) / cols
-  const FOOTER = 34
-  const rowH = (colW * 3) / 4 + FOOTER + 1 /* ring 边距 */
-  const totalRows = Math.ceil(images.length / cols)
-  const firstRow = Math.max(0, Math.floor((scrollTop - PAD) / (rowH + GAP)) - 2)
-  const lastRow = Math.min(
-    totalRows - 1,
-    Math.ceil((scrollTop + viewport.h - PAD) / (rowH + GAP)) + 2
-  )
-  const shown = images.slice(firstRow * cols, (lastRow + 1) * cols)
+  // 窗口化计算：列数与卡片行高（数学已提取到 lib/virtualGrid.ts，行为断言见 tests/virtual-grid.test.ts）
+  const win = computeVirtualWindow({ viewport, scrollTop, itemCount: images.length })
+  const shown = images.slice(win.startIndex, win.endIndex)
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto p-4 pb-24">
       {/* 上下 spacer 撑起总高度，保持滚动条与位置稳定 */}
-      <div style={{ height: Math.max(0, firstRow) * (rowH + GAP) }} />
+      <div style={{ height: win.spacerTop }} />
       <div
         className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${win.cols}, minmax(0, 1fr))` }}
       >
         {shown.map((image) => (
           <ImageCard key={image.id} image={image} onContextMenu={openMenu} />
         ))}
       </div>
-      <div style={{ height: Math.max(0, totalRows - lastRow - 1) * (rowH + GAP) }} />
+      <div style={{ height: win.spacerBottom }} />
 
       {menu && (
         <CardContextMenu
