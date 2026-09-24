@@ -7,6 +7,7 @@ import { useUIStore } from '../store/ui'
 import { formatBytes } from '../lib/utils'
 import { FILL_MODE_LABELS, type AppSettings, type FillMode } from '@shared/types'
 import { SyncSection } from './SyncSection'
+import { ErrorBoundary } from './ErrorBoundary'
 
 const FILL_HINTS: Record<FillMode, string> = {
   fill: '覆盖全屏，裁掉多余',
@@ -260,8 +261,10 @@ export function SettingsPanel(): JSX.Element {
         </p>
       </section>
 
-      {/* MinIO 多设备同步 */}
-      <SyncSection />
+      {/* MinIO 多设备同步（#15 局部边界：同步区异常不拖垮整个设置面板） */}
+      <ErrorBoundary section="同步">
+        <SyncSection />
+      </ErrorBoundary>
 
       <div className="border-t border-neutral-200 pt-3 text-xs text-neutral-400 dark:border-neutral-800">
         vividDeck v{version}

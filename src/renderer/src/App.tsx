@@ -10,6 +10,7 @@ import { SetWallpaperDialog } from './components/SetWallpaperDialog'
 import { CropModal } from './components/CropModal'
 import { CategoryManager } from './components/CategoryManager'
 import { SlideshowPanel } from './components/SlideshowPanel'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { CloudDownloadBanner } from './components/CloudDownloadBanner'
@@ -100,7 +101,9 @@ export default function App(): JSX.Element {
         <Toolbar />
         <CloudDownloadBanner />
         {loaded ? (
-          <GalleryGrid />
+          <ErrorBoundary section="画廊">
+            <GalleryGrid />
+          </ErrorBoundary>
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">
             正在加载素材库…
@@ -111,17 +114,23 @@ export default function App(): JSX.Element {
       {/* 抽屉 */}
       {drawer === 'slideshow' && (
         <Drawer title="轮播计划" onClose={closeDrawer}>
-          <SlideshowPanel />
+          <ErrorBoundary section="轮播面板">
+            <SlideshowPanel />
+          </ErrorBoundary>
         </Drawer>
       )}
       {drawer === 'history' && (
         <Drawer title="壁纸历史" onClose={closeDrawer}>
-          <HistoryPanel />
+          <ErrorBoundary section="壁纸历史">
+            <HistoryPanel />
+          </ErrorBoundary>
         </Drawer>
       )}
       {drawer === 'settings' && (
         <Drawer title="设置" onClose={closeDrawer}>
-          <SettingsPanel />
+          <ErrorBoundary section="设置面板">
+            <SettingsPanel />
+          </ErrorBoundary>
         </Drawer>
       )}
 
