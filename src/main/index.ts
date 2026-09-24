@@ -26,6 +26,7 @@ import { customStorageDirMissing } from './services/paths'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
+import { initLogger, installCrashHandlers } from './services/logger'
 import { flushSyncConfig } from './services/sync/store'
 import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
 import {
@@ -37,6 +38,10 @@ import {
 } from './bubble'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// ---------- 日志落盘 + 崩溃兜底（#14，须尽早，先于单实例锁与各服务初始化） ----------
+initLogger()
+installCrashHandlers()
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
