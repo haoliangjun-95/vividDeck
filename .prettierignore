@@ -1,0 +1,8 @@
+node_modules
+out
+dist
+release
+package-lock.json
+*.tsbuildinfo
+.serena
+docs/images
