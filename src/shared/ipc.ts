@@ -8,7 +8,8 @@ export const IPC = {
   APP_SET_THEME: 'app:setTheme',
   APP_SET_IMPORT_MODE: 'app:setImportMode',
   APP_SET_DEFAULT_FILL: 'app:setDefaultFillMode', // { mode: FillMode } -> AppSettings
-  APP_GET_STORAGE: 'app:getStorageInfo', // -> { root, custom, sizeBytes }
+  APP_GET_STORAGE: 'app:getStorageInfo', // -> { root, custom, missing, sizeBytes, cacheBytes }
+  APP_CLEAN_CACHE: 'app:cleanCache', // 孤儿缩略图/预览 + 预渲染缓存清理 -> { removed, freedBytes, cacheBytes }
   APP_CHANGE_STORAGE: 'app:changeStorageDir', // 弹选目录并整体迁移，成功后自动重启
   APP_OPEN_USER_DATA: 'app:openUserData',
   APP_QUIT: 'app:quit',

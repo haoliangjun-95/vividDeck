@@ -2,7 +2,7 @@
  * 设置面板：外观主题、默认填充模式、导入模式、存储位置（可整体迁移）、同步占位
  */
 import React, { useEffect, useState } from 'react'
-import { FolderOpen, HardDrive, Loader2 } from 'lucide-react'
+import { Eraser, FolderOpen, HardDrive, Loader2 } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { formatBytes } from '../lib/utils'
 import { FILL_MODE_LABELS, type AppSettings, type FillMode } from '@shared/types'
@@ -24,8 +24,10 @@ export function SettingsPanel(): JSX.Element {
     root: string
     custom: boolean
     sizeBytes: number
+    cacheBytes: number
   } | null>(null)
   const [migrating, setMigrating] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
 
   const reloadStorage = (): void => {
     void window.api
@@ -55,6 +57,25 @@ export function SettingsPanel(): JSX.Element {
       await window.api.setBubbleEnabled(patch.bubbleEnabled)
       // 悬浮球开关由主进程处理后回读最新设置（含托盘菜单联动）
       void window.api.getState().then((s) => setSettings(s.settings))
+    }
+  }
+
+  /** 缓存清理（#8）：孤儿缩略图/预览 + 预渲染缓存（可再生），完成后 toast 结果并刷新占用 */
+  const cleanCaches = async (): Promise<void> => {
+    setCleaning(true)
+    try {
+      const r = await window.api.cleanCache()
+      toast(
+        r.removed > 0
+          ? `已清理 ${r.removed} 个缓存文件，释放 ${formatBytes(r.freedBytes)}`
+          : '没有需要清理的孤儿缓存',
+        'info'
+      )
+      reloadStorage()
+    } catch (err) {
+      toast(`清理失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setCleaning(false)
     }
   }
 
@@ -222,6 +243,26 @@ export function SettingsPanel(): JSX.Element {
               >
                 <FolderOpen size={14} />
                 打开目录
+              </button>
+            </div>
+            {/* 缓存清理（#8）：孤儿缩略图/预览删除；预渲染缓存整体可再生 */}
+            <div className="flex items-center justify-between rounded-lg border border-neutral-300 p-3 dark:border-neutral-700">
+              <div className="min-w-0">
+                <div className="text-xs text-neutral-500 dark:text-neutral-300">
+                  缩略图 / 预览缓存
+                </div>
+                <div className="mt-0.5 text-xs text-neutral-400">
+                  占用约 {storage ? formatBytes(storage.cacheBytes) : '读取中…'}
+                  ，清理仅删除失效缓存，图片不受影响
+                </div>
+              </div>
+              <button
+                className="btn-ghost shrink-0 border border-neutral-300 dark:border-neutral-700"
+                disabled={cleaning}
+                onClick={() => void cleanCaches()}
+              >
+                {cleaning ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+                清理缓存
               </button>
             </div>
             <p className="text-xs leading-relaxed text-neutral-400">

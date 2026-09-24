@@ -41,9 +41,16 @@ const api = {
   setDefaultFillMode: (mode: AppSettings['defaultFillMode']) =>
     call<AppSettings>(IPC.APP_SET_DEFAULT_FILL, mode),
   getStorageInfo: () =>
-    call<{ root: string; custom: boolean; missing: boolean; sizeBytes: number }>(
-      IPC.APP_GET_STORAGE
-    ),
+    call<{
+      root: string
+      custom: boolean
+      missing: boolean
+      sizeBytes: number
+      cacheBytes: number
+    }>(IPC.APP_GET_STORAGE),
+  /** 缓存清理（#8）：孤儿缩略图/预览 + 预渲染缓存；cacheBytes 为清理后剩余占用 */
+  cleanCache: () =>
+    call<{ removed: number; freedBytes: number; cacheBytes: number }>(IPC.APP_CLEAN_CACHE),
   changeStorageDir: () => call<{ canceled: boolean; root?: string }>(IPC.APP_CHANGE_STORAGE),
   openUserData: () => ipcRenderer.invoke(IPC.APP_OPEN_USER_DATA),
   quit: () => ipcRenderer.invoke(IPC.APP_QUIT),

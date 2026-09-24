@@ -39,6 +39,7 @@ import {
   setStorageDirPointer,
   storageRoot
 } from './services/paths'
+import { cacheSize, cleanCache } from './services/cache'
 import {
   getSyncConfig as getSyncCfg,
   updateSyncConfig,
@@ -110,15 +111,22 @@ export function registerIpcHandlers(): void {
     wrap((mode: FillMode) => updateSettings({ defaultFillMode: mode }))
   )
 
-  // 存储位置信息（当前根目录 / 是否自定义 / 占用大小）
+  // 存储位置信息（当前根目录 / 是否自定义 / 占用大小 / 缓存占用）
   ipcMain.handle(
     IPC.APP_GET_STORAGE,
     wrap(async () => ({
       root: storageRoot(),
       custom: hasCustomStorageDir(),
       missing: customStorageDirMissing(),
-      sizeBytes: await dirSize(storageRoot())
+      sizeBytes: await dirSize(storageRoot()),
+      cacheBytes: await cacheSize()
     }))
+  )
+
+  // 缓存清理（#8）：孤儿缩略图/预览 + 预渲染缓存（可整体再生）
+  ipcMain.handle(
+    IPC.APP_CLEAN_CACHE,
+    wrap(async () => cleanCache())
   )
 
   /**
