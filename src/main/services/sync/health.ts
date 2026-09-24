@@ -9,7 +9,7 @@
  */
 import type { SyncHealthReport } from '@shared/types'
 import { getLibrary } from '../library'
-import { hashFile } from '../../utils/fs'
+import { hashFilesParallel } from '../workers/hashPool'
 import { isRealFile } from '../paths'
 import { thumbPath } from '../thumbnails'
 import { pruneExpiredTombstones } from '../tombstones'
@@ -127,18 +127,19 @@ export async function verifyIntegrity(
 ): Promise<{ id: string; fileName: string }[]> {
   const data = getLibrary()
   const locals = data.images.filter((i) => i.localFile && isRealFile(i.path))
-  const bad: { id: string; fileName: string }[] = []
-  for (let i = 0; i < locals.length; i++) {
-    const img = locals[i]
-    try {
-      const actual = await hashFile(img.path)
-      if (actual !== img.hash) bad.push({ id: img.id, fileName: img.fileName })
-    } catch {
-      /* 读取失败按断链处理，不属校验范畴 */
-    }
-    onProgress?.(i + 1, locals.length)
-  }
-  return bad
+  if (locals.length === 0) return []
+  // A4：sha1 移入 worker 线程并行计算，主线程只收发消息（大库校验不再卡 UI）。
+  // 读取失败的文件不出现在结果中——按断链处理，不属校验范畴（与旧逐文件 catch 语义一致）
+  const hashes = await hashFilesParallel(
+    locals.map((i) => i.path),
+    { onProgress }
+  )
+  return locals
+    .filter((img) => {
+      const actual = hashes.get(img.path)
+      return actual !== undefined && actual !== img.hash
+    })
+    .map((img) => ({ id: img.id, fileName: img.fileName }))
 }
 
 /** 下载容量预估（scope 内云端图的数量与总字节） */

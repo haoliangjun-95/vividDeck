@@ -43,8 +43,20 @@ vi.mock('@main/services/library', () => ({
   }
 }))
 
-vi.mock('@main/utils/fs', () => ({
-  hashFile: (p: string): Promise<string> => Promise.resolve(h.hashResults[p] ?? 'corrupt-hash')
+// A4：verifyIntegrity 改用 worker 哈希池 —— 登记过哈希的路径返回之，未登记的模拟读取失败（缺席结果）
+vi.mock('@main/services/workers/hashPool', () => ({
+  hashFilesParallel: (
+    paths: string[],
+    opts: { onProgress?: (current: number, total: number) => void } = {}
+  ): Promise<Map<string, string>> => {
+    const map = new Map<string, string>()
+    paths.forEach((p, i) => {
+      const hashed = h.hashResults[p]
+      if (hashed !== undefined) map.set(p, hashed)
+      opts.onProgress?.(i + 1, paths.length)
+    })
+    return Promise.resolve(map)
+  }
 }))
 
 vi.mock('@main/services/paths', () => ({
