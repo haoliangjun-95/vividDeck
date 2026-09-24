@@ -62,12 +62,17 @@ export function CropModal(): JSX.Element | null {
   const presets = [
     ...ASPECT_PRESETS,
     ...(monitors.length > 0
-      ? monitors.slice(0, 2).map((m) => ({ label: `${m.label.slice(0, 8)} ${m.width}×${m.height}`, value: m.width / m.height }))
+      ? monitors.slice(0, 2).map((m) => ({
+          label: `${m.label.slice(0, 8)} ${m.width}×${m.height}`,
+          value: m.width / m.height
+        }))
       : [])
   ]
 
   /** 取景框（预览图像素）→ 原图像素坐标 */
-  const mapRectToOriginal = (area: Area): { x: number; y: number; width: number; height: number } | null => {
+  const mapRectToOriginal = (
+    area: Area
+  ): { x: number; y: number; width: number; height: number } | null => {
     if (!previewSize || previewSize.w === 0) return null
     const scale = image.width / previewSize.w
     return {
@@ -147,8 +152,10 @@ export function CropModal(): JSX.Element | null {
 
         {croppedArea && (
           <div className="text-xs text-neutral-400">
-            裁剪输出约 {Math.round(croppedArea.width * (previewSize ? image.width / previewSize.w : 1))} ×{' '}
-            {Math.round(croppedArea.height * (previewSize ? image.width / previewSize.w : 1))} 像素（保存后可在素材库中查看）
+            裁剪输出约{' '}
+            {Math.round(croppedArea.width * (previewSize ? image.width / previewSize.w : 1))} ×{' '}
+            {Math.round(croppedArea.height * (previewSize ? image.width / previewSize.w : 1))}{' '}
+            像素（保存后可在素材库中查看）
           </div>
         )}
 
@@ -156,7 +163,11 @@ export function CropModal(): JSX.Element | null {
           <button className="btn-ghost" onClick={close}>
             取消
           </button>
-          <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" disabled={busy} onClick={() => void doCrop(false)}>
+          <button
+            className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+            disabled={busy}
+            onClick={() => void doCrop(false)}
+          >
             保存到素材库
           </button>
           <button className="btn-primary" disabled={busy} onClick={() => void doCrop(true)}>

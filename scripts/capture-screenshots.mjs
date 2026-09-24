@@ -17,7 +17,10 @@ async function cdpByUrl(fragment) {
   const page = targets.find((t) => t.type === 'page' && t.url.includes(fragment))
   if (!page) throw new Error(`未找到页面: ${fragment}`)
   const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
+  await new Promise((res, rej) => {
+    ws.onopen = res
+    ws.onerror = rej
+  })
   let seq = 0
   const pending = new Map()
   ws.onmessage = (ev) => {
@@ -34,7 +37,11 @@ async function cdpByUrl(fragment) {
       ws.send(JSON.stringify({ id, method, params }))
     })
   const evaluate = async (expression) => {
-    const res = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    const res = await send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    })
     if (res.result?.exceptionDetails) throw new Error('执行失败: ' + expression.slice(0, 80))
     return res.result?.result?.value
   }
@@ -104,42 +111,62 @@ async function main() {
   await saveShot(await app.capture(), 'gallery')
 
   // 2) 灯箱（点击第一张卡片，等预览加载）
-  await click(app, `window.__clickText(undefined, document.querySelector('figure')) || (() => {
+  await click(
+    app,
+    `window.__clickText(undefined, document.querySelector('figure')) || (() => {
     document.querySelector('figure').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     return true
-  })()`)
+  })()`
+  )
   await sleep(2500)
   await saveShot(await app.capture(), 'lightbox')
 
   // 3) 设壁纸对话框
-  await click(app, `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('设为壁纸')); if (!b) return false; b.click(); return true })()`)
+  await click(
+    app,
+    `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => x.textContent.includes('设为壁纸')); if (!b) return false; b.click(); return true })()`
+  )
   await sleep(1200)
   await saveShot(await app.capture(), 'set-wallpaper')
   // 关闭对话框（Esc 会同时关掉灯箱，稍后重开）
-  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await app.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  )
   await sleep(600)
 
   // 4) 裁剪工具（重开灯箱 → 点裁剪）
-  await click(app, `(() => { document.querySelector('figure').dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`)
+  await click(
+    app,
+    `(() => { document.querySelector('figure').dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`
+  )
   await sleep(1800)
-  await click(app, `(() => { const b = document.querySelector('button[title="裁剪"]'); if (!b) return false; b.click(); return true })()`)
+  await click(
+    app,
+    `(() => { const b = document.querySelector('button[title="裁剪"]'); if (!b) return false; b.click(); return true })()`
+  )
   await sleep(1500)
   await saveShot(await app.capture(), 'crop')
-  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await app.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  )
   await sleep(600)
 
   // 5) 轮播面板
   await click(app, `window.__clickText('轮播计划')`)
   await sleep(1000)
   await saveShot(await app.capture(), 'slideshow')
-  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await app.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  )
   await sleep(500)
 
   // 6) 壁纸历史
   await click(app, `window.__clickText('壁纸历史')`)
   await sleep(1000)
   await saveShot(await app.capture(), 'history')
-  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await app.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  )
   await sleep(500)
 
   // 7) 设置页（先遮盖敏感信息）
@@ -148,7 +175,9 @@ async function main() {
   await app.evaluate(MASK_JS)
   await sleep(300)
   await saveShot(await app.capture(), 'settings')
-  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  await app.evaluate(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  )
 
   app.close()
 
@@ -160,10 +189,12 @@ async function main() {
     await sharp({
       create: { width: 360, height: 240, channels: 3, background: '#1f2937' }
     })
-      .composite([{
-        input: await sharp(png).resize(140, 140, { fit: 'contain' }).png().toBuffer(),
-        gravity: 'center'
-      }])
+      .composite([
+        {
+          input: await sharp(png).resize(140, 140, { fit: 'contain' }).png().toBuffer(),
+          gravity: 'center'
+        }
+      ])
       .jpeg({ quality: 90 })
       .toFile(path.join(OUT_DIR, 'bubble.jpg'))
     console.log(`  ✓ ${OUT_DIR}/bubble.jpg`)

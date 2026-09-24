@@ -5,7 +5,18 @@
  * - media:// 自定义协议：渲染层按图片 ID 安全加载缩略图/预览/原图
  * - 主题跟随系统（nativeTheme → 渲染层 html.dark）
  */
-import { app, BrowserWindow, dialog, Menu, Tray, nativeTheme, net, protocol, shell, nativeImage } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  Tray,
+  nativeTheme,
+  net,
+  protocol,
+  shell,
+  nativeImage
+} from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { registerIpcHandlers } from './ipc'
@@ -17,7 +28,13 @@ import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
 import { flushSyncConfig } from './services/sync/store'
 import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
-import { flushBubble, initBubble, isBubbleVisible, onBubbleOpenMain, setBubbleEnabled } from './bubble'
+import {
+  flushBubble,
+  initBubble,
+  isBubbleVisible,
+  onBubbleOpenMain,
+  setBubbleEnabled
+} from './bubble'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -120,8 +137,7 @@ function rebuildTrayMenu(): void {
       { label: '下一张壁纸', click: () => trayNext() },
       {
         label: '立即同步',
-        click: () =>
-          void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
+        click: () => void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
       },
       { type: 'separator' },
       {
@@ -172,7 +188,13 @@ function createAppMenu(): void {
         { role: 'togglefullscreen', label: '全屏' }
       ]
     },
-    { label: '窗口', submenu: [{ role: 'minimize', label: '最小化' }, { role: 'close', label: '关闭' }] }
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭' }
+      ]
+    }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

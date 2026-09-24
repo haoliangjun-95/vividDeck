@@ -19,7 +19,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /** 各子目录名（迁移与创建共用） */
-const SUB_DIRS = ['data', 'library', 'thumbnails', 'previews', 'applied', 'bin', 'trash-staging'] as const
+const SUB_DIRS = [
+  'data',
+  'library',
+  'thumbnails',
+  'previews',
+  'applied',
+  'bin',
+  'trash-staging'
+] as const
 
 /** 默认存储根目录 */
 export function defaultRoot(): string {
@@ -48,7 +56,10 @@ function readStorageDirSetting(): string {
     /* 无指针文件则尝试旧位置 */
   }
   // 2) 兼容旧位置：settings.json 内嵌字段（仅供手工配置过的用户）
-  for (const file of [path.join(defaultRoot(), 'data/settings.json'), path.join(app.getPath('userData'), 'data/settings.json')]) {
+  for (const file of [
+    path.join(defaultRoot(), 'data/settings.json'),
+    path.join(app.getPath('userData'), 'data/settings.json')
+  ]) {
     try {
       const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { storageDir?: string }
       if (typeof parsed.storageDir === 'string' && parsed.storageDir) return parsed.storageDir
@@ -182,7 +193,8 @@ export function isRealFile(p: string): boolean {
 }
 
 /** 递归统计目录占用（字节） */
-export async function dirSize(dir: string): Promise<number> {  let total = 0
+export async function dirSize(dir: string): Promise<number> {
+  let total = 0
   const walk = async (d: string): Promise<void> => {
     let entries: fs.Dirent[]
     try {

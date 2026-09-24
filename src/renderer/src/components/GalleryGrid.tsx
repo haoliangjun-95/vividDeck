@@ -3,13 +3,28 @@
  * 右键菜单、批量选择模式（批量设置分类 / 批量删除）
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { Check, CheckSquare, CloudDownload, Crop, FolderInput, FolderOpen, Heart, ImageUp, Loader2, Monitor, Pencil, RefreshCw, Tag as TagIcon, Trash2, X } from 'lucide-react'
+import {
+  Check,
+  CheckSquare,
+  CloudDownload,
+  Crop,
+  FolderInput,
+  FolderOpen,
+  Heart,
+  ImageUp,
+  Loader2,
+  Monitor,
+  Pencil,
+  RefreshCw,
+  Tag as TagIcon,
+  Trash2,
+  X
+} from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, mediaUrl } from '../lib/utils'
 import { Modal } from './ui'
 import type { ImageItem, SyncProgress } from '@shared/types'
-
 
 /** 卡片信息栏：分类徽章 + 标签 chips */
 function CardInfoFooter({ image }: { image: ImageItem }) {
@@ -48,7 +63,13 @@ function CardInfoFooter({ image }: { image: ImageItem }) {
   )
 }
 
-function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: (e: React.MouseEvent, image: ImageItem) => void }) {
+function ImageCard({
+  image,
+  onContextMenu
+}: {
+  image: ImageItem
+  onContextMenu: (e: React.MouseEvent, image: ImageItem) => void
+}) {
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const openLightbox = useUIStore((s) => s.openLightbox)
   const openWallpaperDialog = useUIStore((s) => s.openWallpaperDialog)
@@ -59,9 +80,7 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
   return (
     <div
       className={`group relative cursor-pointer overflow-hidden rounded-xl bg-neutral-100 shadow-sm ring-1 transition-shadow hover:shadow-lg dark:bg-neutral-900 ${
-        selectionMode && selected
-          ? 'ring-2 ring-indigo-500'
-          : 'ring-black/5 dark:ring-white/5'
+        selectionMode && selected ? 'ring-2 ring-indigo-500' : 'ring-black/5 dark:ring-white/5'
       }`}
       draggable={!selectionMode}
       onDragStart={(e) => {
@@ -86,7 +105,10 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
       title={selectionMode ? undefined : `${image.fileName}（双击设为壁纸，右键更多操作）`}
     >
       {/* 图片区（悬停渐变与操作） */}
-      <figure className="relative overflow-hidden bg-neutral-200 dark:bg-neutral-800" style={{ aspectRatio: '4 / 3' }}>
+      <figure
+        className="relative overflow-hidden bg-neutral-200 dark:bg-neutral-800"
+        style={{ aspectRatio: '4 / 3' }}
+      >
         <img
           src={mediaUrl('thumb', image.id)}
           alt={image.fileName}
@@ -128,7 +150,9 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
         {!selectionMode && (
           <button
             className={`absolute right-2 top-2 rounded-full p-1.5 backdrop-blur transition-opacity ${
-              image.favorite ? 'text-amber-400 opacity-100' : 'text-white/80 opacity-0 group-hover:opacity-100'
+              image.favorite
+                ? 'text-amber-400 opacity-100'
+                : 'text-white/80 opacity-0 group-hover:opacity-100'
             }`}
             onClick={(e) => {
               e.stopPropagation()
@@ -158,7 +182,9 @@ function ImageCard({ image, onContextMenu }: { image: ImageItem; onContextMenu: 
         {selectionMode && (
           <span
             className={`absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
-              selected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-white/80 bg-black/30 text-transparent backdrop-blur'
+              selected
+                ? 'border-indigo-500 bg-indigo-500 text-white'
+                : 'border-white/80 bg-black/30 text-transparent backdrop-blur'
             }`}
           >
             <Check size={14} strokeWidth={3} />
@@ -203,12 +229,13 @@ function CardContextMenu({
   const toast = useUIStore((s) => s.toast)
   const selectionMode = useUIStore((s) => s.selectionMode)
   const selectedIds = useUIStore((s) => s.selectedIds)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [newTag, setNewTag] = useState('')
 
   // 右键的图片在选中集合内 → 分类/标签/删除/收藏批量作用于全部选中
   const batchIds =
-    selectionMode && selectedIds.includes(image.id) && selectedIds.length > 0 ? [...selectedIds] : null
+    selectionMode && selectedIds.includes(image.id) && selectedIds.length > 0
+      ? [...selectedIds]
+      : null
   const N = batchIds?.length ?? 1
 
   /** 切换标签：单张直接换；批量时以被右键图片的状态为准，对选中集统一加/删 */
@@ -258,7 +285,14 @@ function CardContextMenu({
     'flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-[13px] hover:bg-neutral-100 dark:hover:bg-neutral-700/70'
 
   return (
-    <div className="fixed inset-0 z-50" onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+    <div
+      className="fixed inset-0 z-50"
+      onMouseDown={onClose}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onClose()
+      }}
+    >
       <div
         className="card fixed w-52 overflow-hidden py-1 shadow-xl"
         style={{ left, top }}
@@ -338,7 +372,11 @@ function CardContextMenu({
           <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
             <FolderInput size={12} />
             移动到分类
-            {batchIds && <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">已选 {N} 张</span>}
+            {batchIds && (
+              <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                已选 {N} 张
+              </span>
+            )}
           </div>
           <div className="max-h-36 overflow-y-auto pr-0.5">
             {categories.map((cat) => (
@@ -385,7 +423,11 @@ function CardContextMenu({
           <div className="flex items-center gap-1.5 px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
             <TagIcon size={12} />
             标签
-            {batchIds && <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">已选 {N} 张</span>}
+            {batchIds && (
+              <span className="rounded bg-indigo-100 px-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                已选 {N} 张
+              </span>
+            )}
           </div>
           <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto px-1 pb-1.5">
             {allTags.map((tag) => {
@@ -406,7 +448,9 @@ function CardContextMenu({
                 </button>
               )
             })}
-            {allTags.length === 0 && <span className="px-1 text-[11px] text-neutral-400">暂无标签</span>}
+            {allTags.length === 0 && (
+              <span className="px-1 text-[11px] text-neutral-400">暂无标签</span>
+            )}
           </div>
           <div className="flex gap-1 px-1">
             <input
@@ -418,7 +462,11 @@ function CardContextMenu({
                 if (e.key === 'Enter') addNewTag()
               }}
             />
-            <button className="btn-ghost !px-2 !py-1 text-[11px]" onClick={addNewTag} disabled={!newTag.trim()}>
+            <button
+              className="btn-ghost !px-2 !py-1 text-[11px]"
+              onClick={addNewTag}
+              disabled={!newTag.trim()}
+            >
               添加
             </button>
           </div>
@@ -499,10 +547,7 @@ function BatchActionBar({
   const selectedIds = useUIStore((s) => s.selectedIds)
   const setSelectedIds = useUIStore((s) => s.setSelectedIds)
   const setSelectionMode = useUIStore((s) => s.setSelectionMode)
-  const clearSelection = useUIStore((s) => s.clearSelection)
   const images = useLibraryStore(selectFilteredImages)
-  const toast = useUIStore((s) => s.toast)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   if (selectedIds.length === 0) return null
 
@@ -519,30 +564,20 @@ function BatchActionBar({
         {allFilteredSelected ? '取消全选' : '全选当前筛选'}
       </button>
       <span className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
-      <button
-        className="btn-ghost !py-1 text-xs"
-        onClick={() => {
-          onOpenCategoryPicker()
-          setConfirmDelete(false)
-        }}
-      >
+      <button className="btn-ghost !py-1 text-xs" onClick={onOpenCategoryPicker}>
         <FolderInput size={13} />
         设置分类…
       </button>
-      <button
-        className="btn-ghost !py-1 text-xs"
-        onClick={() => {
-          onOpenTagPicker()
-          setConfirmDelete(false)
-        }}
-      >
+      <button className="btn-ghost !py-1 text-xs" onClick={onOpenTagPicker}>
         <TagIcon size={13} />
         加标签…
       </button>
       {downloading ? (
         <span className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-300">
           <Loader2 size={13} className="animate-spin" />
-          {progress && progress.total > 0 ? `下载中 ${progress.current}/${progress.total}` : '下载中…'}
+          {progress && progress.total > 0
+            ? `下载中 ${progress.current}/${progress.total}`
+            : '下载中…'}
           <button
             className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
             onClick={onCancelDownload}
@@ -553,7 +588,11 @@ function BatchActionBar({
       ) : (
         <>
           {cloudCount > 0 && (
-            <button className="btn-ghost !py-1 text-xs" onClick={onDownloadSelected} title={`下载选中图片的原图到本地（${cloudCount} 张云端）`}>
+            <button
+              className="btn-ghost !py-1 text-xs"
+              onClick={onDownloadSelected}
+              title={`下载选中图片的原图到本地（${cloudCount} 张云端）`}
+            >
               <CloudDownload size={13} />
               下载原图({cloudCount})
             </button>
@@ -570,13 +609,7 @@ function BatchActionBar({
           )}
         </>
       )}
-      <button
-        className="btn-danger !py-1 text-xs"
-        onClick={() => {
-          setConfirmDelete(false)
-          onDeleteRequest()
-        }}
-      >
+      <button className="btn-danger !py-1 text-xs" onClick={onDeleteRequest}>
         <Trash2 size={13} />
         删除…
       </button>
@@ -603,7 +636,15 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
   const [newTags, setNewTags] = useState('')
 
   const apply = (): void => {
-    const additions = Array.from(new Set([...picked, ...newTags.split(/[,，\s]+/).map((t) => t.trim()).filter(Boolean)]))
+    const additions = Array.from(
+      new Set([
+        ...picked,
+        ...newTags
+          .split(/[,，\s]+/)
+          .map((t) => t.trim())
+          .filter(Boolean)
+      ])
+    )
     if (additions.length === 0) return
     const before = ids
       .map((id) => images.find((i) => i.id === id))
@@ -645,7 +686,9 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
                       ? 'bg-indigo-600 text-white'
                       : 'bg-neutral-100 text-neutral-600 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-neutral-800 dark:text-neutral-300'
                   }`}
-                  onClick={() => setPicked(active ? picked.filter((t) => t !== tag) : [...picked, tag])}
+                  onClick={() =>
+                    setPicked(active ? picked.filter((t) => t !== tag) : [...picked, tag])
+                  }
                 >
                   {active ? '✓ ' : '+ '}
                   {tag}
@@ -675,7 +718,9 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
             添加到 {ids.length} 张
           </button>
         </div>
-        <p className="text-xs text-neutral-400">批量添加为「并入」：选中图片已有的标签保留不覆盖。</p>
+        <p className="text-xs text-neutral-400">
+          批量添加为「并入」：选中图片已有的标签保留不覆盖。
+        </p>
       </div>
     </Modal>
   )
@@ -684,7 +729,6 @@ function BatchTagModal({ ids, onClose }: { ids: string[]; onClose: () => void })
 /** 删除确认弹窗：两个明确入口（所有设备删除 / 仅清理本地副本）+ 撤销提示 */
 function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => void }) {
   const toast = useUIStore((st) => st.toast)
-  const pushUndo = useUIStore((st) => st.pushUndo)
   const clearSelection = useUIStore((st) => st.clearSelection)
   const [busy, setBusy] = useState(false)
 
@@ -702,7 +746,10 @@ function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => vo
                 label: '撤销',
                 onClick: () => {
                   void window.api.restoreImages(ids).then(({ restored }) => {
-                    toast(restored > 0 ? `已恢复 ${restored} 张` : '暂存区已清理，无法恢复', restored > 0 ? 'success' : 'error')
+                    toast(
+                      restored > 0 ? `已恢复 ${restored} 张` : '暂存区已清理，无法恢复',
+                      restored > 0 ? 'success' : 'error'
+                    )
                     void useLibraryStore.getState().load()
                   })
                 }
@@ -729,7 +776,9 @@ function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => vo
           onClick={() => void doDelete('all')}
         >
           <div className="text-sm font-medium text-red-600 dark:text-red-400">从所有设备删除</div>
-          <div className="mt-0.5 text-xs text-neutral-400">移入废纸篓并同步删除到其他设备（本次会话内可撤销）</div>
+          <div className="mt-0.5 text-xs text-neutral-400">
+            移入废纸篓并同步删除到其他设备（本次会话内可撤销）
+          </div>
         </button>
         <button
           className="w-full rounded-lg border border-neutral-300 p-3 text-left transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
@@ -737,7 +786,9 @@ function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: () => vo
           onClick={() => void doDelete('local')}
         >
           <div className="text-sm font-medium">仅清理本地副本</div>
-          <div className="mt-0.5 text-xs text-neutral-400">释放本机磁盘；记录与其他设备不受影响，需要时可重新下载</div>
+          <div className="mt-0.5 text-xs text-neutral-400">
+            释放本机磁盘；记录与其他设备不受影响，需要时可重新下载
+          </div>
         </button>
         <button className="btn-ghost w-full justify-center" disabled={busy} onClick={onClose}>
           取消
@@ -820,7 +871,9 @@ function BatchCategoryModal({ ids, onClose }: { ids: string[]; onClose: () => vo
             移出分类（设为未分类）
           </button>
         </div>
-        <p className="text-xs text-neutral-400">批量修改会同步刷新修改时间，经 MinIO 同步自动传播到其他设备。</p>
+        <p className="text-xs text-neutral-400">
+          批量修改会同步刷新修改时间，经 MinIO 同步自动传播到其他设备。
+        </p>
       </div>
     </Modal>
   )
@@ -847,7 +900,9 @@ export function GalleryGrid(): JSX.Element {
   /** 下载后仍未成功的 id（操作栏提供重试入口） */
   const [retryIds, setRetryIds] = useState<string[] | null>(null)
   const allImages = useLibraryStore((s) => s.images)
-  const cloudCount = useUIStore((s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length)
+  const cloudCount = useUIStore(
+    (s) => s.selectedIds.filter((id) => !allImages.find((i) => i.id === id)?.localFile).length
+  )
 
   // 批量下载进度（主进程 downloadScope 以 downloading 阶段广播）
   useEffect(() => {
@@ -861,7 +916,9 @@ export function GalleryGrid(): JSX.Element {
   /** 批量下载图片的云端原图（主进程并发 3、可取消；失败/取消后可重试） */
   const downloadSelected = async (ids?: string[]): Promise<void> => {
     const known = useLibraryStore.getState().images
-    const targets = (ids ?? useUIStore.getState().selectedIds).filter((id) => !known.find((i) => i.id === id)?.localFile)
+    const targets = (ids ?? useUIStore.getState().selectedIds).filter(
+      (id) => !known.find((i) => i.id === id)?.localFile
+    )
     if (targets.length === 0) return
     setBulkDownloading(true)
     setRetryIds(null)
@@ -874,7 +931,8 @@ export function GalleryGrid(): JSX.Element {
       const stillMissing = targets.filter((id) => !now.find((i) => i.id === id)?.localFile)
       setRetryIds(stillMissing.length > 0 ? stillMissing : null)
       if (r.cancelled) toast(`下载已取消：完成 ${r.downloaded} 张`, 'info')
-      else if (r.failed > 0) toast(`下载完成 ${r.downloaded} 张，失败 ${r.failed} 张，可在操作栏重试`, 'info')
+      else if (r.failed > 0)
+        toast(`下载完成 ${r.downloaded} 张，失败 ${r.failed} 张，可在操作栏重试`, 'info')
       else toast(`已下载 ${r.downloaded} 张到本地`)
     } catch (err) {
       setRetryIds(targets)
@@ -901,7 +959,13 @@ export function GalleryGrid(): JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       const el = document.activeElement
       const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-      if (e.key === 'Escape' && selectionMode && !categoryPickerOpen && !tagPickerOpen && !deleteConfirmOpen) {
+      if (
+        e.key === 'Escape' &&
+        selectionMode &&
+        !categoryPickerOpen &&
+        !tagPickerOpen &&
+        !deleteConfirmOpen
+      ) {
         setSelectionMode(false)
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) {
@@ -960,7 +1024,8 @@ export function GalleryGrid(): JSX.Element {
           // 阻止冒泡：App 级窗口 drop 监听也会导入，双导入会产生重复记录
           e.stopPropagation()
           const paths = Array.from(e.dataTransfer.files).map((f) => window.api.filePathOf(f))
-          if (paths.length) void importPaths(paths).then((r) => r.added > 0 && toast(`导入 ${r.added} 张图片`))
+          if (paths.length)
+            void importPaths(paths).then((r) => r.added > 0 && toast(`导入 ${r.added} 张图片`))
         }}
       >
         <div className="text-5xl">🖼️</div>
@@ -979,13 +1044,25 @@ export function GalleryGrid(): JSX.Element {
   // 窗口化计算：列数与卡片行高（与 CSS 断点保持一致）
   const GAP = 12
   const PAD = 16
-  const cols = viewport.w >= 1536 ? 6 : viewport.w >= 1280 ? 5 : viewport.w >= 1024 ? 4 : viewport.w >= 640 ? 3 : 2
+  const cols =
+    viewport.w >= 1536
+      ? 6
+      : viewport.w >= 1280
+        ? 5
+        : viewport.w >= 1024
+          ? 4
+          : viewport.w >= 640
+            ? 3
+            : 2
   const colW = (viewport.w - PAD * 2 - GAP * (cols - 1)) / cols
   const FOOTER = 34
   const rowH = (colW * 3) / 4 + FOOTER + 1 /* ring 边距 */
   const totalRows = Math.ceil(images.length / cols)
   const firstRow = Math.max(0, Math.floor((scrollTop - PAD) / (rowH + GAP)) - 2)
-  const lastRow = Math.min(totalRows - 1, Math.ceil((scrollTop + viewport.h - PAD) / (rowH + GAP)) + 2)
+  const lastRow = Math.min(
+    totalRows - 1,
+    Math.ceil((scrollTop + viewport.h - PAD) / (rowH + GAP)) + 2
+  )
   const shown = images.slice(firstRow * cols, (lastRow + 1) * cols)
 
   return (
@@ -1022,7 +1099,9 @@ export function GalleryGrid(): JSX.Element {
         downloading={bulkDownloading}
         progress={dlProgress}
         onCancelDownload={() => {
-          void window.api.syncCancelDownload().then(() => toast('已发送取消信号，正在停止下载…', 'info'))
+          void window.api
+            .syncCancelDownload()
+            .then(() => toast('已发送取消信号，正在停止下载…', 'info'))
         }}
         retryCount={retryIds?.length ?? 0}
         onRetry={() => void downloadSelected(retryIds ?? undefined)}

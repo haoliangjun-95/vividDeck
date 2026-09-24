@@ -70,7 +70,7 @@ export const IPC = {
   HISTORY_CLEAR: 'history:clear', // -> HistoryItem[]
 
   // 裁剪
-  CROP_APPLY: 'crop:apply', // { imageId, rect } -> { image: ImageItem } | { error }
+  CROP_APPLY: 'crop:apply' // { imageId, rect } -> { image: ImageItem } | { error }
 } as const
 
 /** 主进程主动推送到渲染层的事件 */

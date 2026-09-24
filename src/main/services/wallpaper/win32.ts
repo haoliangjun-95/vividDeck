@@ -187,18 +187,33 @@ export async function listMonitors(): Promise<MonitorInfo[]> {
 }
 
 /** 设置壁纸（monitorId 为空 = 所有屏）；IDesktopWallpaper 失败时回退 SPI */
-export async function setWallpaper(filePath: string, monitorId?: string, fillMode: FillMode = 'fill'): Promise<void> {
+export async function setWallpaper(
+  filePath: string,
+  monitorId?: string,
+  fillMode: FillMode = 'fill'
+): Promise<void> {
   let devicePath = ''
   if (monitorId?.startsWith('win:')) devicePath = monitorId.slice(4)
   if (devicePath === '__all__') devicePath = '' // 兜底模式仅支持全屏设置
 
   const out = JSON.parse(
-    await runPs(['-Action', 'set', '-Monitor', devicePath, '-Path', filePath, '-Position', String(DWPOS[fillMode])])
+    await runPs([
+      '-Action',
+      'set',
+      '-Monitor',
+      devicePath,
+      '-Path',
+      filePath,
+      '-Position',
+      String(DWPOS[fillMode])
+    ])
   ) as { ok: boolean; error?: string }
 
   if (!out.ok) {
     console.error('[wallpaper/win32] IDesktopWallpaper 失败，回退 SystemParametersInfo:', out.error)
-    const fallback = JSON.parse(await runPs(['-Action', 'set-spi', '-Path', filePath])) as { ok: boolean }
+    const fallback = JSON.parse(await runPs(['-Action', 'set-spi', '-Path', filePath])) as {
+      ok: boolean
+    }
     if (!fallback.ok) throw new Error('Windows 壁纸设置失败（IDesktopWallpaper 与 SPI 均失败）')
   }
 }

@@ -25,7 +25,10 @@ export function createClient(cfg: SyncConfig, secretKey: string): Minio.Client {
 }
 
 /** 连接测试：bucket 列表权限；bucket 不存在时自动创建 */
-export async function testAndPrepareBucket(client: Minio.Client, bucket: string): Promise<{ bucketCreated: boolean }> {
+export async function testAndPrepareBucket(
+  client: Minio.Client,
+  bucket: string
+): Promise<{ bucketCreated: boolean }> {
   const exists = await client.bucketExists(bucket)
   if (exists) return { bucketCreated: false }
   await client.makeBucket(bucket, '')
@@ -33,7 +36,10 @@ export async function testAndPrepareBucket(client: Minio.Client, bucket: string)
 }
 
 /** 拉取全部清单快照（含 base 基线） */
-export async function fetchManifests(client: Minio.Client, bucket: string): Promise<RemoteManifestObject[]> {
+export async function fetchManifests(
+  client: Minio.Client,
+  bucket: string
+): Promise<RemoteManifestObject[]> {
   const keys: string[] = []
   const stream = client.listObjectsV2(bucket, 'manifests/', true)
   await new Promise<void>((resolve, reject) => {
@@ -56,7 +62,11 @@ export async function fetchManifests(client: Minio.Client, bucket: string): Prom
   return results
 }
 
-async function getObjectJson<T>(client: Minio.Client, bucket: string, key: string): Promise<T | null> {
+async function getObjectJson<T>(
+  client: Minio.Client,
+  bucket: string,
+  key: string
+): Promise<T | null> {
   const stream = await client.getObject(bucket, key)
   const chunks: Buffer[] = []
   await new Promise<void>((resolve, reject) => {
@@ -81,7 +91,11 @@ export async function putObjectJson(
 }
 
 /** 对象是否存在（HEAD） */
-export async function objectExists(client: Minio.Client, bucket: string, key: string): Promise<boolean> {
+export async function objectExists(
+  client: Minio.Client,
+  bucket: string,
+  key: string
+): Promise<boolean> {
   try {
     await client.statObject(bucket, key)
     return true
@@ -90,11 +104,22 @@ export async function objectExists(client: Minio.Client, bucket: string, key: st
   }
 }
 
-export async function uploadFile(client: Minio.Client, bucket: string, key: string, filePath: string, contentType: string): Promise<void> {
+export async function uploadFile(
+  client: Minio.Client,
+  bucket: string,
+  key: string,
+  filePath: string,
+  contentType: string
+): Promise<void> {
   await client.fPutObject(bucket, key, filePath, { 'Content-Type': contentType })
 }
 
-export async function downloadFile(client: Minio.Client, bucket: string, key: string, targetPath: string): Promise<void> {
+export async function downloadFile(
+  client: Minio.Client,
+  bucket: string,
+  key: string,
+  targetPath: string
+): Promise<void> {
   await client.fGetObject(bucket, key, targetPath)
 }
 

@@ -43,7 +43,11 @@ interface UIState {
   toggleSelected: (id: string) => void
   setSelectedIds: (ids: string[]) => void
   clearSelection: () => void
-  toast: (message: string, type?: Toast['type'], opts?: { action?: Toast['action']; duration?: number }) => void
+  toast: (
+    message: string,
+    type?: Toast['type'],
+    opts?: { action?: Toast['action']; duration?: number }
+  ) => void
   dismissToast: (id: number) => void
   /** 撤销栈（最近 10 条可撤销操作） */
   undoStack: { label: string; undo: () => Promise<void> }[]
@@ -77,17 +81,25 @@ export const useUIStore = create<UIState>((set, get) => ({
   setSelectionMode: (on) => set({ selectionMode: on, ...(on ? {} : { selectedIds: [] }) }),
   toggleSelected: (id) =>
     set((s) => ({
-      selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id]
+      selectedIds: s.selectedIds.includes(id)
+        ? s.selectedIds.filter((x) => x !== id)
+        : [...s.selectedIds, id]
     })),
   setSelectedIds: (ids) => set({ selectedIds: ids }),
   clearSelection: () => set({ selectedIds: [] }),
   toast: (message, type = 'success', opts) => {
     const id = toastSeq++
-    set({ toasts: [...get().toasts, { id, message, type, action: opts?.action, duration: opts?.duration }] })
+    set({
+      toasts: [
+        ...get().toasts,
+        { id, message, type, action: opts?.action, duration: opts?.duration }
+      ]
+    })
     setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
   },
   undoStack: [],
-  pushUndo: (label, undo) => set((st) => ({ undoStack: [...st.undoStack, { label, undo }].slice(-10) })),
+  pushUndo: (label, undo) =>
+    set((st) => ({ undoStack: [...st.undoStack, { label, undo }].slice(-10) })),
   popUndo: () => {
     const stack = get().undoStack
     const last = stack[stack.length - 1] ?? null

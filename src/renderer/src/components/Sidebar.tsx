@@ -2,7 +2,19 @@
  * 侧边栏：视图切换（全部/收藏）、分类列表（拖拽归类目标 + 管理）、标签云、功能入口
  */
 import React, { useEffect, useState } from 'react'
-import { FolderOpen, Heart, History, Images, Layers, Monitor, Plus, Settings, Sparkles, Tag, Pencil } from 'lucide-react'
+import {
+  FolderOpen,
+  Heart,
+  History,
+  Images,
+  Layers,
+  Monitor,
+  Plus,
+  Settings,
+  Sparkles,
+  Tag,
+  Pencil
+} from 'lucide-react'
 import { matchAlbum } from '@shared/album'
 import type { SmartAlbum } from '@shared/types'
 import { AlbumEditorModal } from './AlbumEditorModal'
@@ -115,7 +127,9 @@ export function Sidebar(): JSX.Element {
   /** 右键菜单正在编辑的相册（打开编辑器时传入 editing） */
   const [editingAlbum, setEditingAlbum] = useState<SmartAlbum | null>(null)
   /** 相册右键菜单（位置 + 目标相册） */
-  const [albumMenu, setAlbumMenu] = useState<{ album: SmartAlbum; x: number; y: number } | null>(null)
+  const [albumMenu, setAlbumMenu] = useState<{ album: SmartAlbum; x: number; y: number } | null>(
+    null
+  )
 
   // Esc 关闭相册右键菜单
   useEffect(() => {
@@ -160,16 +174,20 @@ export function Sidebar(): JSX.Element {
     void reorderCategories(ids)
   }
 
-  const rowDragStart = (id: string) => (e: React.DragEvent): void => {
-    e.dataTransfer.setData('application/x-vd-category', id)
-    e.dataTransfer.effectAllowed = 'move'
-    setDragCatId(id)
-  }
-  const rowDragOver = (id: string | null) => (e: React.DragEvent): void => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setReorderHoverId(id)
-  }
+  const rowDragStart =
+    (id: string) =>
+    (e: React.DragEvent): void => {
+      e.dataTransfer.setData('application/x-vd-category', id)
+      e.dataTransfer.effectAllowed = 'move'
+      setDragCatId(id)
+    }
+  const rowDragOver =
+    (id: string | null) =>
+    (e: React.DragEvent): void => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setReorderHoverId(id)
+    }
 
   const countOf = (categoryId: string | null | 'favorites' | 'all' | 'uncategorized'): number =>
     images.filter((img) => {
@@ -218,7 +236,9 @@ export function Sidebar(): JSX.Element {
           }}
         >
           <div className="mb-1 flex items-center justify-between px-2.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">分类</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+              分类
+            </span>
             <button
               className="btn-ghost !p-1"
               title="管理分类"
@@ -274,8 +294,14 @@ export function Sidebar(): JSX.Element {
         {albums.length > 0 && (
           <section>
             <div className="mb-1 flex items-center justify-between px-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">智能相册</span>
-              <button className="btn-ghost !p-1" title="新建智能相册" onClick={() => setAlbumEditorOpen(true)}>
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                智能相册
+              </span>
+              <button
+                className="btn-ghost !p-1"
+                title="新建智能相册"
+                onClick={() => setAlbumEditorOpen(true)}
+              >
                 <Plus size={12} />
               </button>
             </div>
@@ -286,7 +312,9 @@ export function Sidebar(): JSX.Element {
                 icon={<Sparkles size={16} className="text-fuchsia-500" />}
                 label={album.name}
                 count={images.filter((img) => matchAlbum(img, album)).length}
-                onClick={() => setFilter({ albumId: filter.albumId === album.id ? null : album.id })}
+                onClick={() =>
+                  setFilter({ albumId: filter.albumId === album.id ? null : album.id })
+                }
                 onContextMenu={(e) => {
                   e.preventDefault()
                   setAlbumMenu({ album, x: e.clientX, y: e.clientY })
@@ -313,7 +341,9 @@ export function Sidebar(): JSX.Element {
         {tags.length > 0 && (
           <section>
             <div className="mb-1.5 flex items-center justify-between px-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">标签</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                标签
+              </span>
               {filter.tags.length > 0 && (
                 <button
                   className="rounded-full bg-indigo-100 px-1.5 text-[10px] text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-950 dark:text-indigo-300"
@@ -336,7 +366,9 @@ export function Sidebar(): JSX.Element {
                         : 'bg-neutral-200/80 text-neutral-600 hover:bg-neutral-300/80 dark:bg-neutral-700/60 dark:text-neutral-300'
                     }`}
                     onClick={() =>
-                      setFilter({ tags: active ? filter.tags.filter((t) => t !== tag) : [...filter.tags, tag] })
+                      setFilter({
+                        tags: active ? filter.tags.filter((t) => t !== tag) : [...filter.tags, tag]
+                      })
                     }
                     title={active ? '点击取消该标签筛选' : '点击加入筛选（可多选，任一命中即显示）'}
                   >
@@ -394,7 +426,9 @@ export function Sidebar(): JSX.Element {
       )}
 
       {albumEditorOpen && <AlbumEditorModal onClose={() => setAlbumEditorOpen(false)} />}
-      {editingAlbum && <AlbumEditorModal editing={editingAlbum} onClose={() => setEditingAlbum(null)} />}
+      {editingAlbum && (
+        <AlbumEditorModal editing={editingAlbum} onClose={() => setEditingAlbum(null)} />
+      )}
 
       {/* 功能入口 */}
       <div className="space-y-0.5 border-t border-neutral-200 p-2.5 dark:border-neutral-800">

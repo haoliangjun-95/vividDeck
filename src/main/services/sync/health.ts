@@ -14,7 +14,7 @@ import { isRealFile } from '../paths'
 import { thumbPath } from '../thumbnails'
 import { pruneExpiredTombstones } from '../tombstones'
 import { getSyncConfig, hasSecret, loadSecret } from './store'
-import { createClient, objectExists, fetchManifests } from './client'
+import { createClient, objectExists } from './client'
 
 function configuredClient(): { client: import('minio').Client; bucket: string } | null {
   const cfg = getSyncConfig()
@@ -37,7 +37,7 @@ export async function runHealthCheck(): Promise<SyncHealthReport> {
     missingBinaries: [],
     localBroken: [],
     missingThumbs: [],
-    expiredTombstonesCleaned: pruneExpiredTombstones(),
+    expiredTombstonesCleaned: pruneExpiredTombstones()
   }
 
   // 并发 HEAD 检查：cloud-only 记录的二进制是否存在
@@ -149,4 +149,3 @@ export async function estimateDownload(): Promise<{ count: number; sizeBytes: nu
     sizeBytes: cloudOnly.reduce((s, i) => s + i.sizeBytes, 0)
   }
 }
-

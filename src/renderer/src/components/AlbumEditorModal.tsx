@@ -47,7 +47,10 @@ export function AlbumEditorModal({
   // 实时匹配计数（防抖 400ms）
   useEffect(() => {
     const t = setTimeout(() => {
-      void window.api.countAlbum(rules).then(setCount).catch(() => setCount(null))
+      void window.api
+        .countAlbum(rules)
+        .then(setCount)
+        .catch(() => setCount(null))
     }, 400)
     return () => clearTimeout(t)
   }, [rules])
@@ -98,18 +101,34 @@ export function AlbumEditorModal({
       <div className="space-y-4">
         <label className="block text-xs">
           <span className="mb-1 block text-neutral-400">相册名称</span>
-          <input className="field w-full" value={name} autoFocus placeholder="如：横屏风景大片" onChange={(e) => setName(e.target.value)} />
+          <input
+            className="field w-full"
+            value={name}
+            autoFocus
+            placeholder="如：横屏风景大片"
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
 
         {tags.length > 0 && (
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-xs font-medium">标签（{tagMode === 'all' ? '全部命中' : '任一命中'}）</span>
+              <span className="text-xs font-medium">
+                标签（{tagMode === 'all' ? '全部命中' : '任一命中'}）
+              </span>
               <div className="flex gap-1">
-                <button type="button" className={chip(tagMode === 'any')} onClick={() => switchTagMode('any')}>
+                <button
+                  type="button"
+                  className={chip(tagMode === 'any')}
+                  onClick={() => switchTagMode('any')}
+                >
                   任一
                 </button>
-                <button type="button" className={chip(tagMode === 'all')} onClick={() => switchTagMode('all')}>
+                <button
+                  type="button"
+                  className={chip(tagMode === 'all')}
+                  onClick={() => switchTagMode('all')}
+                >
                   全部
                 </button>
               </div>
@@ -122,7 +141,11 @@ export function AlbumEditorModal({
                     key={t}
                     className={chip((active ?? []).includes(t))}
                     onClick={() =>
-                      patch(tagMode === 'all' ? { tagsAll: toggleIn(rules.tagsAll, t) } : { tagsAny: toggleIn(rules.tagsAny, t) })
+                      patch(
+                        tagMode === 'all'
+                          ? { tagsAll: toggleIn(rules.tagsAll, t) }
+                          : { tagsAny: toggleIn(rules.tagsAny, t) }
+                      )
                     }
                   >
                     #{t}
@@ -136,10 +159,20 @@ export function AlbumEditorModal({
         <div>
           <div className="mb-1.5 text-xs font-medium">方向与比例</div>
           <div className="flex flex-wrap gap-1.5">
-            <button className={chip(rules.orientation === 'landscape')} onClick={() => patch({ orientation: rules.orientation === 'landscape' ? undefined : 'landscape' })}>
+            <button
+              className={chip(rules.orientation === 'landscape')}
+              onClick={() =>
+                patch({ orientation: rules.orientation === 'landscape' ? undefined : 'landscape' })
+              }
+            >
               横图
             </button>
-            <button className={chip(rules.orientation === 'portrait')} onClick={() => patch({ orientation: rules.orientation === 'portrait' ? undefined : 'portrait' })}>
+            <button
+              className={chip(rules.orientation === 'portrait')}
+              onClick={() =>
+                patch({ orientation: rules.orientation === 'portrait' ? undefined : 'portrait' })
+              }
+            >
               竖图
             </button>
             {ASPECT_PRESETS.map((p) => {
@@ -148,7 +181,13 @@ export function AlbumEditorModal({
                 <button
                   key={p.label}
                   className={chip(active)}
-                  onClick={() => patch(active ? { minAspect: undefined, maxAspect: undefined } : { minAspect: p.min, maxAspect: p.max })}
+                  onClick={() =>
+                    patch(
+                      active
+                        ? { minAspect: undefined, maxAspect: undefined }
+                        : { minAspect: p.min, maxAspect: p.max }
+                    )
+                  }
                 >
                   {p.label}
                 </button>
@@ -161,7 +200,11 @@ export function AlbumEditorModal({
           <div className="mb-1.5 text-xs font-medium">分类（任一命中）</div>
           <div className="flex flex-wrap gap-1.5">
             {categories.map((c) => (
-              <button key={c.id} className={chip((rules.categoryIds ?? []).includes(c.id))} onClick={() => patch({ categoryIds: toggleIn(rules.categoryIds, c.id) })}>
+              <button
+                key={c.id}
+                className={chip((rules.categoryIds ?? []).includes(c.id))}
+                onClick={() => patch({ categoryIds: toggleIn(rules.categoryIds, c.id) })}
+              >
                 {c.name}
               </button>
             ))}
@@ -170,7 +213,12 @@ export function AlbumEditorModal({
 
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <label className="flex items-center gap-1.5">
-            <input type="checkbox" className="h-3.5 w-3.5 accent-indigo-600" checked={rules.favoriteOnly ?? false} onChange={(e) => patch({ favoriteOnly: e.target.checked || undefined })} />
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-indigo-600"
+              checked={rules.favoriteOnly ?? false}
+              onChange={(e) => patch({ favoriteOnly: e.target.checked || undefined })}
+            />
             仅收藏
           </label>
           <label className="flex items-center gap-1.5">

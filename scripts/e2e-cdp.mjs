@@ -14,7 +14,9 @@ async function main() {
   // 1. 生成两张测试图（一张正常、一张与第一张内容相同用于验证去重）
   const tmpA = path.join(os.tmpdir(), 'vd-e2e-a.jpg')
   const tmpB = path.join(os.tmpdir(), 'vd-e2e-b.jpg')
-  await sharp({ create: { width: 2400, height: 1600, channels: 3, background: '#4f46e5' } }).jpeg().toFile(tmpA)
+  await sharp({ create: { width: 2400, height: 1600, channels: 3, background: '#4f46e5' } })
+    .jpeg()
+    .toFile(tmpA)
   await sharp(tmpA).jpeg().toFile(tmpB) // 同内容不同文件名
 
   // 2. 找到页面 target
@@ -46,8 +48,13 @@ async function main() {
 
   /** 在页面里执行异步表达式并取值 */
   const evaluate = async (expression) => {
-    const res = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    if (res.result?.exceptionDetails) throw new Error('页面执行出错: ' + JSON.stringify(res.result.exceptionDetails))
+    const res = await send('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    })
+    if (res.result?.exceptionDetails)
+      throw new Error('页面执行出错: ' + JSON.stringify(res.result.exceptionDetails))
     return res.result?.result?.value
   }
 
@@ -58,13 +65,17 @@ async function main() {
   console.log(`✓ preload 桥可用，platform=${state.platform} version=${state.version}`)
 
   const before = await evaluate(`window.api.getLibrary()`)
-  const r1 = await evaluate(`window.api.importPaths([${JSON.stringify(tmpA)}, ${JSON.stringify(tmpB)}])`)
+  const r1 = await evaluate(
+    `window.api.importPaths([${JSON.stringify(tmpA)}, ${JSON.stringify(tmpB)}])`
+  )
   console.log(`✓ 导入结果: 新增 ${r1.added}，跳过 ${r1.skipped}（期望 1 / 1，验证内容哈希去重）`)
 
   const lib = await evaluate(`window.api.getLibrary()`)
   const added = lib.images.filter((img) => !before.images.some((o) => o.id === img.id))
   const img = added[0]
-  console.log(`✓ 入库记录: ${img.fileName} ${img.width}x${img.height} hash=${img.hash.slice(0, 10)}…`)
+  console.log(
+    `✓ 入库记录: ${img.fileName} ${img.width}x${img.height} hash=${img.hash.slice(0, 10)}…`
+  )
 
   // media:// 缩略图协议回读（Image 加载成功即协议+缩略图生成 OK）
   const thumbOk = await evaluate(`(async () => {
@@ -87,7 +98,9 @@ async function main() {
   console.log(`✓ media://preview 协议加载预览图: ${previewOk ? '成功' : '失败'}`)
 
   // 分类/收藏/标签更新
-  const favLib = await evaluate(`window.api.updateImage(${JSON.stringify(img.id)}, { favorite: true, tags: ['冒烟测试'] })`)
+  const favLib = await evaluate(
+    `window.api.updateImage(${JSON.stringify(img.id)}, { favorite: true, tags: ['冒烟测试'] })`
+  )
   const favImg = favLib.images.find((i) => i.id === img.id)
   console.log(`✓ 更新属性: favorite=${favImg.favorite} tags=${JSON.stringify(favImg.tags)}`)
 

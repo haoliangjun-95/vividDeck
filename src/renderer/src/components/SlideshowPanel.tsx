@@ -5,7 +5,14 @@ import React, { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { useLibraryStore } from '../store/library'
-import type { IntervalUnit, MonitorInfo, MonitorOverride, SlideshowConfig, SlideshowOrder, SlideshowScope } from '@shared/types'
+import type {
+  IntervalUnit,
+  MonitorInfo,
+  MonitorOverride,
+  SlideshowConfig,
+  SlideshowOrder,
+  SlideshowScope
+} from '@shared/types'
 import { matchAlbum } from '@shared/album'
 
 export function SlideshowPanel(): JSX.Element {
@@ -20,7 +27,10 @@ export function SlideshowPanel(): JSX.Element {
 
   useEffect(() => {
     void window.api.getSlideshow().then(setConfig)
-    void window.api.listMonitors().then(setMonitors).catch(() => undefined)
+    void window.api
+      .listMonitors()
+      .then(setMonitors)
+      .catch(() => undefined)
     const off = window.api.onSlideshowChanged(setConfig)
     return off
   }, [])
@@ -92,7 +102,9 @@ export function SlideshowPanel(): JSX.Element {
             max={720}
             className="field w-20"
             value={config.intervalValue}
-            onChange={(e) => void patch({ intervalValue: Math.max(1, Number(e.target.value) || 1) })}
+            onChange={(e) =>
+              void patch({ intervalValue: Math.max(1, Number(e.target.value) || 1) })
+            }
           />
           <select
             className="field"
@@ -124,7 +136,8 @@ export function SlideshowPanel(): JSX.Element {
                 ? config.scope.type === 'all'
                 : opt.key === 'favorite'
                   ? config.scope.type === 'favorite'
-                  : config.scope.type === 'category' && config.scope.categoryId === opt.key.split(':')[1]
+                  : config.scope.type === 'category' &&
+                    config.scope.categoryId === opt.key.split(':')[1]
             return (
               <button
                 key={opt.key}
@@ -152,7 +165,9 @@ export function SlideshowPanel(): JSX.Element {
           })}
         </div>
         {poolSize === 0 && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">当前范围内没有图片，轮播将不会切换。</p>
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            当前范围内没有图片，轮播将不会切换。
+          </p>
         )}
       </section>
 
@@ -196,23 +211,32 @@ export function SlideshowPanel(): JSX.Element {
           </label>
         )}
         {config.independentMonitors && monitors.length > 1
-          ? monitors.map((m) => <MonitorCard key={m.id} monitor={m} config={config} onPatch={(p) => void patch(p)} />)
+          ? monitors.map((m) => (
+              <MonitorCard key={m.id} monitor={m} config={config} onPatch={(p) => void patch(p)} />
+            ))
           : monitors.map((m) => {
               const active = config.monitorIds.includes(m.id)
               return (
                 <button
                   key={m.id}
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 transition-colors ${
-                    active ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/60' : 'border-neutral-300 dark:border-neutral-700'
+                    active
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/60'
+                      : 'border-neutral-300 dark:border-neutral-700'
                   }`}
                   onClick={() =>
                     void patch({
-                      monitorIds: active ? config.monitorIds.filter((id) => id !== m.id) : [...config.monitorIds, m.id]
+                      monitorIds: active
+                        ? config.monitorIds.filter((id) => id !== m.id)
+                        : [...config.monitorIds, m.id]
                     })
                   }
                 >
                   <span className="truncate">
-                    {m.label} <span className="text-xs text-neutral-400">{m.width}×{m.height}</span>
+                    {m.label}{' '}
+                    <span className="text-xs text-neutral-400">
+                      {m.width}×{m.height}
+                    </span>
                   </span>
                   <span>{active ? '✓' : ''}</span>
                 </button>
@@ -240,7 +264,6 @@ export function SlideshowPanel(): JSX.Element {
   )
 }
 
-
 /** 单屏轮播卡片：当前壁纸 + 下次切换倒计时 + 自定义此屏（范围/周期/填充/开关） */
 function MonitorCard({
   monitor,
@@ -266,7 +289,9 @@ function MonitorCard({
     fillMode: o.fillMode ?? config.fillMode
   }
   const disabled = o.disabled ?? false
-  const intervalMsVal = eff.intervalValue * (eff.intervalUnit === 'minute' ? 60_000 : eff.intervalUnit === 'hour' ? 3_600_000 : 86_400_000)
+  const intervalMsVal =
+    eff.intervalValue *
+    (eff.intervalUnit === 'minute' ? 60_000 : eff.intervalUnit === 'hour' ? 3_600_000 : 86_400_000)
   const lastAt = config.lastAppliedAtByMonitor?.[monitor.id] ?? 0
   const nextAt = lastAt + intervalMsVal
   const remainMs = nextAt - now
@@ -297,13 +322,16 @@ function MonitorCard({
   }
 
   const patchOverride = (p: Partial<MonitorOverride>): void => {
-    onPatch({ monitorOverrides: { ...(config.monitorOverrides ?? {}), [monitor.id]: { ...o, ...p } } })
+    onPatch({
+      monitorOverrides: { ...(config.monitorOverrides ?? {}), [monitor.id]: { ...o, ...p } }
+    })
   }
 
   const scopeLabel = (sc: SlideshowScope): string => {
     if (sc.type === 'all') return '全部图库'
     if (sc.type === 'favorite') return '收藏'
-    if (sc.type === 'category') return `分类：${categories.find((c) => c.id === sc.categoryId)?.name ?? '?'}`
+    if (sc.type === 'category')
+      return `分类：${categories.find((c) => c.id === sc.categoryId)?.name ?? '?'}`
     return `相册：${albums.find((a) => a.id === sc.albumId)?.name ?? '?'}`
   }
 
@@ -311,7 +339,11 @@ function MonitorCard({
     <div className={`card space-y-2 p-3 ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-3">
         {currentImg ? (
-          <img src={`media://thumb/${currentImg.id}`} alt="" className="h-12 w-16 shrink-0 rounded-md object-cover" />
+          <img
+            src={`media://thumb/${currentImg.id}`}
+            alt=""
+            className="h-12 w-16 shrink-0 rounded-md object-cover"
+          />
         ) : (
           <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md bg-neutral-200 text-[10px] text-neutral-400 dark:bg-neutral-700">
             未设置
@@ -319,13 +351,21 @@ function MonitorCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">
-            {monitor.label} <span className="text-xs font-normal text-neutral-400">{monitor.width}×{monitor.height}{monitor.isMain ? ' · 主屏' : ''}</span>
+            {monitor.label}{' '}
+            <span className="text-xs font-normal text-neutral-400">
+              {monitor.width}×{monitor.height}
+              {monitor.isMain ? ' · 主屏' : ''}
+            </span>
           </div>
           <div className="text-xs text-neutral-400">
-            {disabled ? '已暂停' : config.enabled ? fmtRemain(remainMs) : '轮播未开启'} · {scopeLabel(eff.scope as SlideshowScope)}
+            {disabled ? '已暂停' : config.enabled ? fmtRemain(remainMs) : '轮播未开启'} ·{' '}
+            {scopeLabel(eff.scope as SlideshowScope)}
           </div>
         </div>
-        <label className="flex cursor-pointer items-center gap-1 text-[11px] text-neutral-400" title="单独暂停此屏轮播">
+        <label
+          className="flex cursor-pointer items-center gap-1 text-[11px] text-neutral-400"
+          title="单独暂停此屏轮播"
+        >
           <input
             type="checkbox"
             className="h-3.5 w-3.5 accent-indigo-600"
@@ -335,7 +375,10 @@ function MonitorCard({
           轮播
         </label>
       </div>
-      <button className="btn-ghost w-full justify-center !py-1 text-xs" onClick={() => setExpanded((v) => !v)}>
+      <button
+        className="btn-ghost w-full justify-center !py-1 text-xs"
+        onClick={() => setExpanded((v) => !v)}
+      >
         {expanded ? '收起' : '自定义此屏'}
       </button>
       {expanded && (
@@ -347,9 +390,17 @@ function MonitorCard({
               min={1}
               className="field w-16 !py-1"
               value={eff.intervalValue}
-              onChange={(e) => patchOverride({ intervalValue: Math.max(1, Number(e.target.value) || 1) })}
+              onChange={(e) =>
+                patchOverride({ intervalValue: Math.max(1, Number(e.target.value) || 1) })
+              }
             />
-            <select className="field !py-1" value={eff.intervalUnit} onChange={(e) => patchOverride({ intervalUnit: e.target.value as 'minute' | 'hour' | 'day' })}>
+            <select
+              className="field !py-1"
+              value={eff.intervalUnit}
+              onChange={(e) =>
+                patchOverride({ intervalUnit: e.target.value as 'minute' | 'hour' | 'day' })
+              }
+            >
               <option value="minute">分钟</option>
               <option value="hour">小时</option>
               <option value="day">天</option>
@@ -357,7 +408,13 @@ function MonitorCard({
           </div>
           <div className="flex items-center gap-2">
             <span className="w-10 shrink-0 text-neutral-400">填充</span>
-            <select className="field !py-1" value={eff.fillMode} onChange={(e) => patchOverride({ fillMode: e.target.value as 'fill' | 'stretch' | 'center' | 'fit' })}>
+            <select
+              className="field !py-1"
+              value={eff.fillMode}
+              onChange={(e) =>
+                patchOverride({ fillMode: e.target.value as 'fill' | 'stretch' | 'center' | 'fit' })
+              }
+            >
               <option value="fill">铺满</option>
               <option value="stretch">拉伸</option>
               <option value="center">居中</option>
@@ -373,17 +430,22 @@ function MonitorCard({
                 const [type, id] = e.target.value.split(':')
                 if (type === 'all') patchOverride({ scope: { type: 'all' } })
                 else if (type === 'favorite') patchOverride({ scope: { type: 'favorite' } })
-                else if (type === 'category') patchOverride({ scope: { type: 'category', categoryId: id } })
+                else if (type === 'category')
+                  patchOverride({ scope: { type: 'category', categoryId: id } })
                 else if (type === 'album') patchOverride({ scope: { type: 'album', albumId: id } })
               }}
             >
               <option value="all:">全部图库</option>
               <option value="favorite:">收藏</option>
               {categories.map((c) => (
-                <option key={c.id} value={`category:${c.id}`}>分类：{c.name}</option>
+                <option key={c.id} value={`category:${c.id}`}>
+                  分类：{c.name}
+                </option>
               ))}
               {albums.map((a) => (
-                <option key={a.id} value={`album:${a.id}`}>相册：{a.name}</option>
+                <option key={a.id} value={`album:${a.id}`}>
+                  相册：{a.name}
+                </option>
               ))}
             </select>
           </div>

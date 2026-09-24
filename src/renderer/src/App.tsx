@@ -47,7 +47,9 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const off = window.api.onSlideshowTick(({ entry, manual }) => {
       void load()
-      const name = useLibraryStore.getState().images.find((img) => img.id === entry.imageId)?.fileName
+      const name = useLibraryStore
+        .getState()
+        .images.find((img) => img.id === entry.imageId)?.fileName
       if (!manual && name) toast(`轮播已切换：${name}`, 'info')
     })
     return off
@@ -100,7 +102,9 @@ export default function App(): JSX.Element {
         {loaded ? (
           <GalleryGrid />
         ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">正在加载素材库…</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">
+            正在加载素材库…
+          </div>
         )}
       </main>
 

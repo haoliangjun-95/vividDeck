@@ -11,7 +11,11 @@ import * as Minio from 'minio'
 app.setName('vividdeck')
 app.whenReady().then(async () => {
   try {
-    const dataDir = path.join(process.env.VD_HOME ?? path.join(app.getPath('userData'), 'storage'), 'storage', 'data')
+    const dataDir = path.join(
+      process.env.VD_HOME ?? path.join(app.getPath('userData'), 'storage'),
+      'storage',
+      'data'
+    )
     const cfg = JSON.parse(fs.readFileSync(path.join(dataDir, 'sync-config.json'), 'utf-8'))
     const secretBuf = fs.readFileSync(path.join(dataDir, 'sync-secret.bin'))
     const secret = safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(secretBuf) : ''
@@ -65,8 +69,9 @@ app.whenReady().then(async () => {
     }
 
     console.log(`\n全部快照并集: 图片记录 ${imageIds.size} 条，墓碑 ${tombAll.size} 条`)
-    const alive = [...imageIds].filter((id) => !tombAll.has(id))
-    console.log(`最新快照: ${latest ? `${latest.images.length} 条记录 / ${latest.tombstones.length} 墓碑` : '无'}`)
+    console.log(
+      `最新快照: ${latest ? `${latest.images.length} 条记录 / ${latest.tombstones.length} 墓碑` : '无'}`
+    )
     const dedupTomb = [...tombAll.values()].filter((t) => t.deletedBy === 'dedup')
     console.log(`dedup 墓碑: ${dedupTomb.length} 条`)
     const byDev = {}

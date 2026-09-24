@@ -50,7 +50,9 @@ export function SyncSection(): JSX.Element | null {
       reload()
       if (r.ok && r.stats) {
         const s = r.stats
-        toast(`同步完成：拉取 ${s.pulled} 条，上传 ${s.uploaded} 张，耗时 ${(s.durationMs / 1000).toFixed(1)}s`)
+        toast(
+          `同步完成：拉取 ${s.pulled} 条，上传 ${s.uploaded} 张，耗时 ${(s.durationMs / 1000).toFixed(1)}s`
+        )
       } else if (!r.ok) {
         toast(`同步失败：${r.error}`, 'error')
       }
@@ -115,11 +117,18 @@ export function SyncSection(): JSX.Element | null {
     }
   }
 
-  const doDownload = async (type: 'all' | 'favorite' | 'category', categoryId?: string): Promise<void> => {
+  const doDownload = async (
+    type: 'all' | 'favorite' | 'category',
+    categoryId?: string
+  ): Promise<void> => {
     setBusyDownload(true)
     try {
       const r = await window.api.syncDownload({ type, categoryId })
-      toast(r.failed > 0 ? `下载完成 ${r.downloaded} 张，失败 ${r.failed} 张` : `已下载 ${r.downloaded} 张到本地`)
+      toast(
+        r.failed > 0
+          ? `下载完成 ${r.downloaded} 张，失败 ${r.failed} 张`
+          : `已下载 ${r.downloaded} 张到本地`
+      )
     } catch (err) {
       toast(`下载失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
@@ -209,7 +218,11 @@ export function SyncSection(): JSX.Element | null {
           </label>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" disabled={testing} onClick={() => void saveAndTest()}>
+          <button
+            className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+            disabled={testing}
+            onClick={() => void saveAndTest()}
+          >
             {testing ? <Loader2 size={14} className="animate-spin" /> : null}
             {testing ? '测试中…' : '保存并测试连接'}
           </button>
@@ -258,7 +271,9 @@ export function SyncSection(): JSX.Element | null {
         <div className="card space-y-2.5 p-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-400">
             <span>上次同步：{status.lastSyncAt ? formatTime(status.lastSyncAt) : '从未'}</span>
-            {status.cloudOnlyCount > 0 && <span>云端未下载：{status.cloudOnlyCount} 张（按需下载）</span>}
+            {status.cloudOnlyCount > 0 && (
+              <span>云端未下载：{status.cloudOnlyCount} 张（按需下载）</span>
+            )}
           </div>
           {status.lastError && (
             <div className="rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-600 dark:bg-red-950/50 dark:text-red-400">
@@ -268,7 +283,9 @@ export function SyncSection(): JSX.Element | null {
           {progress && (
             <div>
               <div className="mb-1 flex justify-between text-xs text-neutral-400">
-                <span>{PHASE_LABELS[progress.phase]} {progress.message}</span>
+                <span>
+                  {PHASE_LABELS[progress.phase]} {progress.message}
+                </span>
                 {progress.total > 0 && (
                   <span>
                     {progress.current}/{progress.total}
@@ -278,7 +295,10 @@ export function SyncSection(): JSX.Element | null {
               <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
                 <div
                   className="h-full rounded-full bg-indigo-500 transition-all"
-                  style={{ width: progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '100%' }}
+                  style={{
+                    width:
+                      progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '100%'
+                  }}
                 />
               </div>
             </div>
@@ -290,11 +310,17 @@ export function SyncSection(): JSX.Element | null {
             </button>
             {status.cloudOnlyCount > 0 && !busyDownload && (
               <>
-                <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" onClick={() => void doDownload('all')}>
+                <button
+                  className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+                  onClick={() => void doDownload('all')}
+                >
                   <CloudDownload size={14} />
                   全部下载（{status.cloudOnlyCount}）
                 </button>
-                <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" onClick={() => void doDownload('favorite')}>
+                <button
+                  className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+                  onClick={() => void doDownload('favorite')}
+                >
                   <HardDriveDownload size={14} />
                   下载收藏
                 </button>
@@ -309,7 +335,9 @@ export function SyncSection(): JSX.Element | null {
                 <button
                   className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
                   onClick={() => {
-                    void window.api.syncCancelDownload().then(() => toast('已发送取消信号，正在停止下载…', 'info'))
+                    void window.api
+                      .syncCancelDownload()
+                      .then(() => toast('已发送取消信号，正在停止下载…', 'info'))
                   }}
                 >
                   取消
@@ -328,7 +356,6 @@ export function SyncSection(): JSX.Element | null {
     </section>
   )
 }
-
 
 /** 同步体检：三方对账结果 + 修复动作 + 完整性校验 + 下载容量预估 */
 function HealthCheckSection(): JSX.Element | null {
@@ -363,7 +390,10 @@ function HealthCheckSection(): JSX.Element | null {
 
   if (checking === false && report === null && estimate === null) {
     return (
-      <button className="btn-ghost w-full justify-center border border-neutral-300 text-xs dark:border-neutral-700" onClick={() => void run()}>
+      <button
+        className="btn-ghost w-full justify-center border border-neutral-300 text-xs dark:border-neutral-700"
+        onClick={() => void run()}
+      >
         🔍 同步体检（检查云端孤儿 / 缺失原图 / 本地断链）
       </button>
     )
@@ -386,7 +416,10 @@ function HealthCheckSection(): JSX.Element | null {
         action: {
           label: `清理 ${report.cloudOrphanObjects.length} 个`,
           onClick: () => {
-            if (!confirm(`删除桶中 ${report.cloudOrphanObjects.length} 个孤儿对象？此操作不可恢复。`)) return
+            if (
+              !confirm(`删除桶中 ${report.cloudOrphanObjects.length} 个孤儿对象？此操作不可恢复。`)
+            )
+              return
             void window.api.syncCleanOrphans(report.cloudOrphanObjects).then((n) => {
               toast(`已清理 ${n} 个孤儿对象`)
               void run()
@@ -429,7 +462,11 @@ function HealthCheckSection(): JSX.Element | null {
       })
     }
     if (report.expiredTombstonesCleaned.length > 0) {
-      rows.push({ label: '已清理过期墓碑', count: report.expiredTombstonesCleaned.length, hint: '90 天 TTL 自动清理' })
+      rows.push({
+        label: '已清理过期墓碑',
+        count: report.expiredTombstonesCleaned.length,
+        hint: '90 天 TTL 自动清理'
+      })
     }
   }
 
@@ -437,7 +474,11 @@ function HealthCheckSection(): JSX.Element | null {
     <div className="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium">同步体检</span>
-        <button className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => void run()} disabled={checking}>
+        <button
+          className="btn-ghost !px-2 !py-0.5 text-[11px]"
+          onClick={() => void run()}
+          disabled={checking}
+        >
           {checking ? '检查中…' : '重新检查'}
         </button>
       </div>
@@ -447,14 +488,21 @@ function HealthCheckSection(): JSX.Element | null {
           {estimate.count > 0 && (
             <>
               {' · '}
-              <button className="text-indigo-500 hover:underline" onClick={() => window.api.syncCancelDownload()}>
+              <button
+                className="text-indigo-500 hover:underline"
+                onClick={() => window.api.syncCancelDownload()}
+              >
                 取消进行中的下载
               </button>
             </>
           )}
         </div>
       )}
-      {rows.length === 0 && !checking && <div className="text-[11px] text-emerald-600 dark:text-emerald-400">✓ 一切正常，未发现问题</div>}
+      {rows.length === 0 && !checking && (
+        <div className="text-[11px] text-emerald-600 dark:text-emerald-400">
+          ✓ 一切正常，未发现问题
+        </div>
+      )}
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-2 text-[11px]">
           <div className="min-w-0 flex-1">
@@ -476,7 +524,10 @@ function HealthCheckSection(): JSX.Element | null {
             <span className="ml-1 text-neutral-400">{r.hint}</span>
           </div>
           {r.action && (
-            <button className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11px]" onClick={r.action.onClick}>
+            <button
+              className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11px]"
+              onClick={r.action.onClick}
+            >
               {r.action.label}
             </button>
           )}
@@ -488,11 +539,21 @@ function HealthCheckSection(): JSX.Element | null {
         onClick={() => {
           if (!confirm('校验全部本地文件的完整性（内容哈希比对，大库耗时较长）？')) return
           setVerifying(true)
-          void window.api.syncVerifyIntegrity().then((bad) => {
-            setVerifying(false)
-            if (bad.length === 0) toast('完整性校验通过：全部本地文件与记录一致')
-            else toast(`${bad.length} 个文件内容与记录不符（可能已损坏）：${bad.slice(0, 3).map((b) => b.fileName).join('、')}${bad.length > 3 ? ' 等' : ''}`, 'error')
-          }).catch(() => setVerifying(false))
+          void window.api
+            .syncVerifyIntegrity()
+            .then((bad) => {
+              setVerifying(false)
+              if (bad.length === 0) toast('完整性校验通过：全部本地文件与记录一致')
+              else
+                toast(
+                  `${bad.length} 个文件内容与记录不符（可能已损坏）：${bad
+                    .slice(0, 3)
+                    .map((b) => b.fileName)
+                    .join('、')}${bad.length > 3 ? ' 等' : ''}`,
+                  'error'
+                )
+            })
+            .catch(() => setVerifying(false))
         }}
       >
         {verifying ? '校验中…' : '校验本地文件完整性（内容哈希比对）'}

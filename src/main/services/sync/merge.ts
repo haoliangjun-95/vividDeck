@@ -43,7 +43,10 @@ export interface MergeOutput {
 }
 
 /** LWW 决胜：返回 true 表示 a 更新 */
-function newer(a: { updatedAt: number; updatedBy?: string }, b: { updatedAt: number; updatedBy?: string }): boolean {
+function newer(
+  a: { updatedAt: number; updatedBy?: string },
+  b: { updatedAt: number; updatedBy?: string }
+): boolean {
   if (a.updatedAt !== b.updatedAt) return a.updatedAt > b.updatedAt
   return String(a.updatedBy ?? '') > String(b.updatedBy ?? '')
 }
@@ -55,8 +58,35 @@ function pickRecordFields<T extends { updatedAt: number; updatedBy?: string }>(a
 
 /** ImageItem → SyncImageRecord（剥离本地态） */
 export function toRecord(img: ImageItem): SyncImageRecord {
-  const { id, fileName, hash, width, height, sizeBytes, format, categoryId, tags, favorite, addedAt, updatedAt } = img
-  return { id, fileName, hash, width, height, sizeBytes, format, categoryId, tags, favorite, addedAt, updatedAt, updatedBy: img.updatedBy ?? '' }
+  const {
+    id,
+    fileName,
+    hash,
+    width,
+    height,
+    sizeBytes,
+    format,
+    categoryId,
+    tags,
+    favorite,
+    addedAt,
+    updatedAt
+  } = img
+  return {
+    id,
+    fileName,
+    hash,
+    width,
+    height,
+    sizeBytes,
+    format,
+    categoryId,
+    tags,
+    favorite,
+    addedAt,
+    updatedAt,
+    updatedBy: img.updatedBy ?? ''
+  }
 }
 
 export function mergeAll(input: MergeInput): MergeOutput {
@@ -197,7 +227,9 @@ export function mergeAll(input: MergeInput): MergeOutput {
 
   // 按 order 排序（缺省排最后），保证各设备分类顺序一致
   let categories = Array.from(catMap.values()).sort(
-    (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || (a.id < b.id ? -1 : 1)
+    (a, b) =>
+      (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+      (a.id < b.id ? -1 : 1)
   )
 
   // ---------- 5.5) 同名分类去重 ----------

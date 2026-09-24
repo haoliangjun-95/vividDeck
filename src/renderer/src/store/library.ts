@@ -2,7 +2,15 @@
  * 素材库状态：数据 + 筛选 + 排序 + 全部业务动作（渲染层唯一数据源）
  */
 import { create } from 'zustand'
-import type { Category, ImageItem, ImportResult, LibraryData, LibraryFilter, SmartAlbum, SmartAlbumRules } from '@shared/types'
+import type {
+  Category,
+  ImageItem,
+  ImportResult,
+  LibraryData,
+  LibraryFilter,
+  SmartAlbum,
+  SmartAlbumRules
+} from '@shared/types'
 import { matchAlbum } from '@shared/album'
 
 export type SortKey = 'added-desc' | 'added-asc' | 'name-asc' | 'size-desc'
@@ -72,7 +80,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   applyData: (data) =>
-    set({ images: data.images, categories: data.categories, tags: data.tags, albums: data.albums ?? [] }),
+    set({
+      images: data.images,
+      categories: data.categories,
+      tags: data.tags,
+      albums: data.albums ?? []
+    }),
 
   importFiles: async (paths) => {
     set({ importing: true })

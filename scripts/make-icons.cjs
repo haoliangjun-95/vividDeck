@@ -40,8 +40,14 @@ async function main() {
   console.log('✓ build/icon.png (1024x1024)')
 
   // 托盘模板图（macOS 模板命名，自动适配亮暗菜单栏）
-  await sharp(Buffer.from(TRAY_SVG)).resize(16, 16).png().toFile(path.join(BUILD_DIR, 'trayTemplate.png'))
-  await sharp(Buffer.from(TRAY_SVG)).resize(32, 32).png().toFile(path.join(BUILD_DIR, 'trayTemplate@2x.png'))
+  await sharp(Buffer.from(TRAY_SVG))
+    .resize(16, 16)
+    .png()
+    .toFile(path.join(BUILD_DIR, 'trayTemplate.png'))
+  await sharp(Buffer.from(TRAY_SVG))
+    .resize(32, 32)
+    .png()
+    .toFile(path.join(BUILD_DIR, 'trayTemplate@2x.png'))
   console.log('✓ build/trayTemplate.png / trayTemplate@2x.png')
 
   // 打印托盘 16px base64（供主进程内嵌，避免资源路径问题）
@@ -55,9 +61,15 @@ async function main() {
       const iconset = path.join(BUILD_DIR, 'icon.iconset')
       fs.mkdirSync(iconset, { recursive: true })
       for (const size of [16, 32, 64, 128, 256, 512, 1024]) {
-        await sharp(path.join(BUILD_DIR, 'icon.png')).resize(size, size).png().toFile(path.join(iconset, `icon_${size}x${size}.png`))
+        await sharp(path.join(BUILD_DIR, 'icon.png'))
+          .resize(size, size)
+          .png()
+          .toFile(path.join(iconset, `icon_${size}x${size}.png`))
         if (size <= 512) {
-          await sharp(path.join(BUILD_DIR, 'icon.png')).resize(size * 2, size * 2).png().toFile(path.join(iconset, `icon_${size}x${size}@2x.png`))
+          await sharp(path.join(BUILD_DIR, 'icon.png'))
+            .resize(size * 2, size * 2)
+            .png()
+            .toFile(path.join(iconset, `icon_${size}x${size}@2x.png`))
         }
       }
       const { execSync } = require('node:child_process')

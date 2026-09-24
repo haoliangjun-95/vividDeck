@@ -19,11 +19,18 @@ export function SettingsPanel(): JSX.Element {
   const toast = useUIStore((s) => s.toast)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [version, setVersion] = useState('')
-  const [storage, setStorage] = useState<{ root: string; custom: boolean; sizeBytes: number } | null>(null)
+  const [storage, setStorage] = useState<{
+    root: string
+    custom: boolean
+    sizeBytes: number
+  } | null>(null)
   const [migrating, setMigrating] = useState(false)
 
   const reloadStorage = (): void => {
-    void window.api.getStorageInfo().then(setStorage).catch(() => undefined)
+    void window.api
+      .getStorageInfo()
+      .then(setStorage)
+      .catch(() => undefined)
   }
 
   useEffect(() => {
@@ -38,7 +45,8 @@ export function SettingsPanel(): JSX.Element {
 
   const update = async (patch: Partial<AppSettings>): Promise<void> => {
     if (patch.theme !== undefined) setSettings(await window.api.setTheme(patch.theme))
-    if (patch.importMode !== undefined) setSettings(await window.api.setImportMode(patch.importMode))
+    if (patch.importMode !== undefined)
+      setSettings(await window.api.setImportMode(patch.importMode))
     if (patch.defaultFillMode !== undefined) {
       setSettings(await window.api.setDefaultFillMode(patch.defaultFillMode))
     }
@@ -53,7 +61,12 @@ export function SettingsPanel(): JSX.Element {
   const changeStorage = async (): Promise<void> => {
     if (!storage) return
     const sizeText = formatBytes(storage.sizeBytes)
-    if (!confirm(`将把全部素材与数据（约 ${sizeText}）复制到新位置并自动重启应用。\n大素材库迁移可能耗时数分钟，期间请勿关机。继续？`)) return
+    if (
+      !confirm(
+        `将把全部素材与数据（约 ${sizeText}）复制到新位置并自动重启应用。\n大素材库迁移可能耗时数分钟，期间请勿关机。继续？`
+      )
+    )
+      return
     setMigrating(true)
     try {
       const result = await window.api.changeStorageDir()
@@ -114,7 +127,9 @@ export function SettingsPanel(): JSX.Element {
               }`}
               onClick={() => void update({ defaultFillMode: mode })}
             >
-              <div className={`text-sm font-medium ${settings.defaultFillMode === mode ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>
+              <div
+                className={`text-sm font-medium ${settings.defaultFillMode === mode ? 'text-indigo-700 dark:text-indigo-300' : ''}`}
+              >
                 {FILL_MODE_LABELS[mode]}
               </div>
               <div className="mt-0.5 text-xs text-neutral-400">{FILL_HINTS[mode]}</div>
@@ -132,8 +147,16 @@ export function SettingsPanel(): JSX.Element {
         <div className="space-y-2">
           {(
             [
-              { value: 'copy', label: '复制到媒体库', hint: '导入时复制一份到存储目录，重命名/删除不影响原文件，占用额外磁盘空间' },
-              { value: 'reference', label: '仅引用原文件', hint: '不复制文件，节省空间；但移动/删除原文件后图片将失效' }
+              {
+                value: 'copy',
+                label: '复制到媒体库',
+                hint: '导入时复制一份到存储目录，重命名/删除不影响原文件，占用额外磁盘空间'
+              },
+              {
+                value: 'reference',
+                label: '仅引用原文件',
+                hint: '不复制文件，节省空间；但移动/删除原文件后图片将失效'
+              }
             ] as { value: AppSettings['importMode']; label: string; hint: string }[]
           ).map((o) => (
             <button
@@ -179,7 +202,11 @@ export function SettingsPanel(): JSX.Element {
                 </span>
               </div>
               <div className="mt-1 break-all font-mono text-xs">{storage?.root ?? '读取中…'}</div>
-              {storage && <div className="mt-1 text-xs text-neutral-400">占用约 {formatBytes(storage.sizeBytes)}</div>}
+              {storage && (
+                <div className="mt-1 text-xs text-neutral-400">
+                  占用约 {formatBytes(storage.sizeBytes)}
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button
@@ -197,7 +224,8 @@ export function SettingsPanel(): JSX.Element {
               </button>
             </div>
             <p className="text-xs leading-relaxed text-neutral-400">
-              更换后全部素材、缓存与配置（JSON 数据文件）整体复制到新位置并自动重启；适合迁移到大容量磁盘。使用外置磁盘时，未挂载启动会提示而非清空数据。
+              更换后全部素材、缓存与配置（JSON
+              数据文件）整体复制到新位置并自动重启；适合迁移到大容量磁盘。使用外置磁盘时，未挂载启动会提示而非清空数据。
             </p>
           </>
         )}
@@ -225,8 +253,10 @@ export function SettingsPanel(): JSX.Element {
           </button>
         </div>
         <p className="text-xs leading-relaxed text-neutral-400">
-          屏幕上的圆形悬浮球，显示当前壁纸缩略图：<b>单击</b>切换下一张（范围跟随轮播计划配置，默认全部图库）；
-          <b>按住拖动</b>调整位置（自动记忆，分辨率变化不会丢）；<b>右键</b>打开菜单（下一张 / 打开主界面 / 隐藏）。
+          屏幕上的圆形悬浮球，显示当前壁纸缩略图：<b>单击</b>
+          切换下一张（范围跟随轮播计划配置，默认全部图库）；
+          <b>按住拖动</b>调整位置（自动记忆，分辨率变化不会丢）；<b>右键</b>打开菜单（下一张 /
+          打开主界面 / 隐藏）。
         </p>
       </section>
 

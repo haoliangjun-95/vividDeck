@@ -92,7 +92,9 @@ export function CategoryManager(): JSX.Element | null {
                   >
                     {cat.name}
                   </button>
-                  <span className="text-xs tabular-nums text-neutral-400">{countOf(cat.id)} 张</span>
+                  <span className="text-xs tabular-nums text-neutral-400">
+                    {countOf(cat.id)} 张
+                  </span>
                   <button
                     className="btn-danger !p-1.5"
                     title="删除分类（图片不会被删除）"

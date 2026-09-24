@@ -2,7 +2,7 @@
  * 素材库服务：导入、元信息、分类、标签、收藏、重命名、删除
  * 所有文件操作收敛在本模块（UI 不直接碰文件），为二期 MinIO 同步预留边界。
  */
-import { app, shell } from 'electron'
+import { shell } from 'electron'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -201,7 +201,14 @@ function commit(mutator: (data: LibraryData) => void): LibraryData {
 // ---------- 导入 ----------
 
 /** 读取单张图片元信息（sharp 解码，HEIC 不依赖系统编解码器） */
-async function buildImageRecord(srcPath: string): Promise<Omit<ImageItem, 'id' | 'categoryId' | 'tags' | 'favorite' | 'addedAt' | 'updatedAt' | 'updatedBy' | 'localFile'>> {
+async function buildImageRecord(
+  srcPath: string
+): Promise<
+  Omit<
+    ImageItem,
+    'id' | 'categoryId' | 'tags' | 'favorite' | 'addedAt' | 'updatedAt' | 'updatedBy' | 'localFile'
+  >
+> {
   const meta = await sharp(srcPath).metadata()
   const stat = await fsp.stat(srcPath)
   const ext = path.extname(srcPath).toLowerCase()
@@ -254,7 +261,11 @@ export async function importPaths(paths: string[]): Promise<ImportResult> {
       if (importMode === 'copy') {
         const { base: nameOnly, ext } = splitFileName(base)
         let target = path.join(libraryDir(), sanitizeFileName(base))
-        if (fs.existsSync(target)) target = path.join(libraryDir(), `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`)
+        if (fs.existsSync(target))
+          target = path.join(
+            libraryDir(),
+            `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`
+          )
         await fsp.copyFile(src, target)
         storedPath = target
       }
@@ -314,7 +325,10 @@ export function renameImage(id: string, newFileName: string): LibraryData {
     path.resolve(target).toLowerCase() !== path.resolve(image.path).toLowerCase()
   ) {
     const { base: nameOnly, ext } = splitFileName(nextName)
-    target = path.join(path.dirname(image.path), `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`)
+    target = path.join(
+      path.dirname(image.path),
+      `${sanitizeFileName(nameOnly)}_${genId().slice(-6)}${ext}`
+    )
   }
   fs.renameSync(image.path, target)
   return commit((data) => {
@@ -336,7 +350,9 @@ export function renameImage(id: string, newFileName: string): LibraryData {
 export async function deleteImage(id: string): Promise<LibraryData> {
   const image = getLibrary().images.find((img) => img.id === id)
   if (image && image.path !== image.sourcePath) {
-    await shell.trashItem(image.path).catch((err) => console.error('[library] 移入废纸篓失败:', err))
+    await shell
+      .trashItem(image.path)
+      .catch((err) => console.error('[library] 移入废纸篓失败:', err))
   }
   purgeCache(id)
   addTombstone(id, 'image')
@@ -346,13 +362,17 @@ export async function deleteImage(id: string): Promise<LibraryData> {
 }
 
 /** 更新图片属性（收藏 / 分类 / 标签） */
-export function updateImage(id: string, patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>): LibraryData {
+export function updateImage(
+  id: string,
+  patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>
+): LibraryData {
   return commit((data) => {
     const target = data.images.find((img) => img.id === id)
     if (!target) return
     if (patch.favorite !== undefined) target.favorite = patch.favorite
     if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
-    if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+    if (patch.tags !== undefined)
+      target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
     stamp(target)
   })
 }
@@ -371,14 +391,18 @@ export function setTagsMany(entries: { id: string; tags: string[] }[]): LibraryD
 }
 
 /** 批量更新属性（单次事务：一次 commit 一次落盘，时间戳统一） */
-export function updateImages(ids: string[], patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>): LibraryData {
+export function updateImages(
+  ids: string[],
+  patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>
+): LibraryData {
   const idSet = new Set(ids)
   return commit((data) => {
     for (const target of data.images) {
       if (!idSet.has(target.id)) continue
       if (patch.favorite !== undefined) target.favorite = patch.favorite
       if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
-      if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+      if (patch.tags !== undefined)
+        target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
       stamp(target)
     }
   })
@@ -436,7 +460,9 @@ export async function deleteImages(ids: string[], mode: DeleteMode = 'all'): Pro
 }
 
 /** 批量按图恢复属性（撤销逆操作；单次事务，重打时间戳以在 LWW 中胜出） */
-export function applyEntries(entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[]): LibraryData {
+export function applyEntries(
+  entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[]
+): LibraryData {
   const map = new Map(entries.map((e) => [e.id, e.patch]))
   return commit((data) => {
     for (const target of data.images) {
@@ -444,7 +470,8 @@ export function applyEntries(entries: { id: string; patch: Pick<ImageItem, 'favo
       if (!patch) continue
       if (patch.favorite !== undefined) target.favorite = patch.favorite
       if (patch.categoryId !== undefined) target.categoryId = patch.categoryId
-      if (patch.tags !== undefined) target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
+      if (patch.tags !== undefined)
+        target.tags = Array.from(new Set(patch.tags.map((t) => t.trim()).filter(Boolean)))
       stamp(target)
     }
   })
@@ -455,16 +482,10 @@ export function applyEntries(entries: { id: string; patch: Pick<ImageItem, 'favo
  * 仅当次会话有效（退出时暂存区已清空则不可恢复，返回恢复成功数）。
  */
 export async function restoreImages(ids: string[]): Promise<{ restored: number }> {
-  const idSet = new Set(ids)
   // 1) 文件从暂存区移回媒体库
   let restored = 0
   const staging = trashStagingDir()
-  let staged: string[] = []
-  try {
-    staged = await fsp.readdir(staging)
-  } catch {
-    staged = []
-  }
+  const staged = await fsp.readdir(staging).catch((): string[] => [])
   for (const id of ids) {
     const prefix = `${id}_`
     const hit = staged.find((n) => n.startsWith(prefix))
@@ -513,7 +534,11 @@ export async function purgeStaging(): Promise<void> {
 }
 
 /** 基于原图裁剪并另存为新图片（sharp 在原图上执行，保证画质） */
-export async function cropToNewImage(imageId: string, rect: CropRect, label: string): Promise<ImageItem> {
+export async function cropToNewImage(
+  imageId: string,
+  rect: CropRect,
+  label: string
+): Promise<ImageItem> {
   const image = getLibrary().images.find((img) => img.id === imageId)
   if (!image) throw new Error('原图不存在')
   const { base } = splitFileName(image.fileName)
@@ -521,7 +546,12 @@ export async function cropToNewImage(imageId: string, rect: CropRect, label: str
   const target = path.join(libraryDir(), newName)
   await sharp(image.path)
     .rotate() // 与预览图一致：先按 EXIF 摆正，坐标系才与取景框对齐
-    .extract({ left: Math.round(rect.x), top: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })
+    .extract({
+      left: Math.round(rect.x),
+      top: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    })
     .jpeg({ quality: 95 })
     .toFile(target)
 
@@ -575,7 +605,8 @@ export function reorderCategories(idsInOrder: string[]): LibraryData {
   return commit((data) => {
     const pos = new Map(idsInOrder.map((id, i) => [id, i]))
     const reordered = [...data.categories].sort(
-      (a, b) => (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+      (a, b) =>
+        (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER)
     )
     reordered.forEach((cat, index) => {
       if (cat.order !== index) {
@@ -607,11 +638,17 @@ export function addAlbum(name: string, rules: SmartAlbumRules): LibraryData {
   const safe = name.trim()
   if (!safe) return getLibrary()
   return commit((data) => {
-    data.albums = [...(data.albums ?? []), { id: genId(), name: safe, rules, createdAt: Date.now(), updatedAt: Date.now() }]
+    data.albums = [
+      ...(data.albums ?? []),
+      { id: genId(), name: safe, rules, createdAt: Date.now(), updatedAt: Date.now() }
+    ]
   })
 }
 
-export function updateAlbum(id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>): LibraryData {
+export function updateAlbum(
+  id: string,
+  patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>
+): LibraryData {
   return commit((data) => {
     const t = (data.albums ?? []).find((a) => a.id === id)
     if (!t) return
@@ -639,7 +676,11 @@ export function countAlbum(rules: SmartAlbumRules): number {
  * 应用远端合并结果（sync/engine 调用）：
  * 本地有文件的记录保留本地 path/localFile，其余按合并结果落地。
  */
-export function applySyncMerge(images: ImageItem[], categories: Category[], albums?: SmartAlbum[]): LibraryData {
+export function applySyncMerge(
+  images: ImageItem[],
+  categories: Category[],
+  albums?: SmartAlbum[]
+): LibraryData {
   return commit((data) => {
     data.images = images
     data.categories = categories

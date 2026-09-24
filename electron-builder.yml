@@ -14,14 +14,14 @@ afterPack: scripts/after-pack.cjs
 
 files:
   - out/**
-  - "!**/.map"
+  - '!**/.map'
 
 # 主进程外部依赖：随包分发并解压出 asar（sharp 原生绑定与 wallpaper 的原生二进制必须落盘才能执行）
 asar: true
 asarUnpack:
-  - "**/node_modules/sharp/**"
-  - "**/node_modules/@img/**"
-  - "**/node_modules/wallpaper/**"
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/node_modules/wallpaper/**'
 
 # 打进安装包的运行时依赖（package.json dependencies）
 # electron-builder 自动按 dependencies 收录，无需额外配置

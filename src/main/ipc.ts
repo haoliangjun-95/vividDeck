@@ -32,11 +32,35 @@ import { applyWallpaper, listMonitors } from './services/wallpaper'
 import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './services/slideshow'
 import { clearHistory, listHistory, recordApply } from './services/history'
 import { flushSettings, getSettings, updateSettings } from './services/settings'
-import { customStorageDirMissing, dirSize, hasCustomStorageDir, setStorageDirPointer, storageRoot } from './services/paths'
-import { getSyncConfig as getSyncCfg, updateSyncConfig, hasSecret as syncHasSecret, saveSecret } from './services/sync/store'
+import {
+  customStorageDirMissing,
+  dirSize,
+  hasCustomStorageDir,
+  setStorageDirPointer,
+  storageRoot
+} from './services/paths'
+import {
+  getSyncConfig as getSyncCfg,
+  updateSyncConfig,
+  hasSecret as syncHasSecret,
+  saveSecret
+} from './services/sync/store'
 import { resetUploadCache } from './services/sync/engine'
-import { cancelDownload, downloadScope, ensureLocal, getStatus as getSyncStatus, syncNow, testConnection } from './services/sync/engine'
-import { cleanupOrphanObjects, estimateDownload, repairLocalBroken, runHealthCheck, verifyIntegrity } from './services/sync/health'
+import {
+  cancelDownload,
+  downloadScope,
+  ensureLocal,
+  getStatus as getSyncStatus,
+  syncNow,
+  testConnection
+} from './services/sync/engine'
+import {
+  cleanupOrphanObjects,
+  estimateDownload,
+  repairLocalBroken,
+  runHealthCheck,
+  verifyIntegrity
+} from './services/sync/health'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
@@ -45,7 +69,10 @@ import { flushSlideshow } from './services/slideshow'
 /** 统一的错误包装：渲染层拿到 { ok, data } 而非异常堆栈 */
 function wrap<A extends unknown[], R>(
   handler: (...args: A) => Promise<R> | R
-): (event: Electron.IpcMainInvokeEvent, ...args: A) => Promise<{ ok: true; data: R } | { ok: false; error: string }> {
+): (
+  event: Electron.IpcMainInvokeEvent,
+  ...args: A
+) => Promise<{ ok: true; data: R } | { ok: false; error: string }> {
   return async (_event, ...args) => {
     try {
       return { ok: true, data: await handler(...args) }
@@ -177,15 +204,16 @@ export function registerIpcHandlers(): void {
       const res = await dialog.showOpenDialog({
         title: '选择要导入的图片',
         properties: ['openFile', 'multiSelections'],
-        filters: [
-          { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }
-        ]
+        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }]
       })
       return res.canceled ? [] : res.filePaths
     })
   )
 
-  ipcMain.handle(IPC.LIBRARY_IMPORT, wrap((payload: { paths: string[] }) => importPaths(payload.paths)))
+  ipcMain.handle(
+    IPC.LIBRARY_IMPORT,
+    wrap((payload: { paths: string[] }) => importPaths(payload.paths))
+  )
   ipcMain.handle(IPC.LIBRARY_GET_ALL, () => getLibrary())
   ipcMain.handle(
     IPC.LIBRARY_RENAME_IMAGE,
@@ -197,42 +225,91 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     IPC.LIBRARY_UPDATE_IMAGE,
-    wrap((payload: { id: string; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }) =>
-      updateImage(payload.id, payload.patch)
+    wrap(
+      (payload: {
+        id: string
+        patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>
+      }) => updateImage(payload.id, payload.patch)
     )
   )
   ipcMain.handle(
     IPC.LIBRARY_UPDATE_IMAGES,
-    wrap((payload: { ids: string[]; patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>> }) =>
-      updateImages(payload.ids, payload.patch)
+    wrap(
+      (payload: {
+        ids: string[]
+        patch: Partial<Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'>>
+      }) => updateImages(payload.ids, payload.patch)
     )
   )
   ipcMain.handle(
     IPC.LIBRARY_DELETE_IMAGES,
-    wrap((payload: { ids: string[]; mode?: 'all' | 'local' }) => deleteImages(payload.ids, payload.mode ?? 'all'))
+    wrap((payload: { ids: string[]; mode?: 'all' | 'local' }) =>
+      deleteImages(payload.ids, payload.mode ?? 'all')
+    )
   )
-  ipcMain.handle(IPC.LIBRARY_RESTORE_IMAGES, wrap((payload: { ids: string[] }) => restoreImages(payload.ids)))
-  ipcMain.handle(IPC.LIBRARY_APPLY_ENTRIES, wrap((payload: { entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[] }) => applyEntries(payload.entries)))
+  ipcMain.handle(
+    IPC.LIBRARY_RESTORE_IMAGES,
+    wrap((payload: { ids: string[] }) => restoreImages(payload.ids))
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_APPLY_ENTRIES,
+    wrap(
+      (payload: {
+        entries: { id: string; patch: Pick<ImageItem, 'favorite' | 'categoryId' | 'tags'> }[]
+      }) => applyEntries(payload.entries)
+    )
+  )
   ipcMain.handle(
     IPC.LIBRARY_SET_TAGS_MANY,
     wrap((payload: { entries: { id: string; tags: string[] }[] }) => setTagsMany(payload.entries))
   )
-  ipcMain.handle(IPC.LIBRARY_ADD_CATEGORY, wrap((payload: { name: string }) => addCategory(payload.name)))
-  ipcMain.handle(IPC.LIBRARY_RENAME_CATEGORY, wrap((payload: { id: string; name: string }) => renameCategory(payload.id, payload.name)))
-  ipcMain.handle(IPC.LIBRARY_DELETE_CATEGORY, wrap((payload: { id: string }) => deleteCategory(payload.id)))
+  ipcMain.handle(
+    IPC.LIBRARY_ADD_CATEGORY,
+    wrap((payload: { name: string }) => addCategory(payload.name))
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_RENAME_CATEGORY,
+    wrap((payload: { id: string; name: string }) => renameCategory(payload.id, payload.name))
+  )
+  ipcMain.handle(
+    IPC.LIBRARY_DELETE_CATEGORY,
+    wrap((payload: { id: string }) => deleteCategory(payload.id))
+  )
   ipcMain.handle(
     IPC.LIBRARY_REORDER_CATEGORIES,
     wrap((payload: { ids: string[] }) => reorderCategories(payload.ids))
   )
 
   // ---------- 智能相册 ----------
-  ipcMain.handle(IPC.ALBUM_ADD, wrap((payload: { name: string; rules: import('@shared/types').SmartAlbumRules }) => addAlbum(payload.name, payload.rules)))
-  ipcMain.handle(IPC.ALBUM_UPDATE, wrap((payload: { id: string; patch: Partial<Pick<import('@shared/types').SmartAlbum, 'name' | 'rules'>> }) => updateAlbum(payload.id, payload.patch)))
-  ipcMain.handle(IPC.ALBUM_DELETE, wrap((payload: { id: string }) => deleteAlbum(payload.id)))
-  ipcMain.handle(IPC.ALBUM_COUNT, wrap((payload: { rules: import('@shared/types').SmartAlbumRules }) => countAlbum(payload.rules)))
+  ipcMain.handle(
+    IPC.ALBUM_ADD,
+    wrap((payload: { name: string; rules: import('@shared/types').SmartAlbumRules }) =>
+      addAlbum(payload.name, payload.rules)
+    )
+  )
+  ipcMain.handle(
+    IPC.ALBUM_UPDATE,
+    wrap(
+      (payload: {
+        id: string
+        patch: Partial<Pick<import('@shared/types').SmartAlbum, 'name' | 'rules'>>
+      }) => updateAlbum(payload.id, payload.patch)
+    )
+  )
+  ipcMain.handle(
+    IPC.ALBUM_DELETE,
+    wrap((payload: { id: string }) => deleteAlbum(payload.id))
+  )
+  ipcMain.handle(
+    IPC.ALBUM_COUNT,
+    wrap((payload: { rules: import('@shared/types').SmartAlbumRules }) => countAlbum(payload.rules))
+  )
 
   // ---------- 壁纸 ----------
-  ipcMain.handle(IPC.WALLPAPER_LIST_MONITORS, wrap(() => listMonitors()))
+  ipcMain.handle(
+    IPC.WALLPAPER_LIST_MONITORS,
+    wrap(() => listMonitors())
+  )
 
   ipcMain.handle(
     IPC.WALLPAPER_APPLY,
@@ -240,9 +317,10 @@ export function registerIpcHandlers(): void {
       const image = getLibrary().images.find((img) => img.id === payload.imageId)
       if (!image) throw new Error('图片不存在（可能已被删除）')
       // 云端图按需下载后再设置（本地已有文件则直接跳过）
-      const filePath = image.localFile && fs.existsSync(image.path)
-        ? image.path
-        : await ensureLocal(payload.imageId)
+      const filePath =
+        image.localFile && fs.existsSync(image.path)
+          ? image.path
+          : await ensureLocal(payload.imageId)
       const result = await applyWallpaper(filePath, payload.monitorIds, payload.fillMode)
       // 设置成功 → 写入历史
       recordApply(image.id, result.applied, payload.fillMode)
@@ -263,7 +341,8 @@ export function registerIpcHandlers(): void {
       const before = getSyncCfg()
       const after = updateSyncConfig(patch)
       // 同步目标身份变化 → 清空上传缓存，避免旧桶的"已上传"标记导致新桶漏传
-      const identity = (c: SyncConfig) => [c.endpoint, c.port, c.useSSL, c.bucket, c.accessKey].join('|')
+      const identity = (c: SyncConfig) =>
+        [c.endpoint, c.port, c.useSSL, c.bucket, c.accessKey].join('|')
       if (identity(before) !== identity(after)) {
         resetUploadCache()
         console.log('[sync] 同步目标已变更，上传缓存已重置')
@@ -279,7 +358,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.SYNC_TEST, () => testConnection())
 
-  ipcMain.handle(IPC.SYNC_NOW, wrap(() => syncNow()))
+  ipcMain.handle(
+    IPC.SYNC_NOW,
+    wrap(() => syncNow())
+  )
 
   ipcMain.handle(
     IPC.SYNC_DOWNLOAD,
@@ -294,25 +376,48 @@ export function registerIpcHandlers(): void {
     cancelDownload()
     return { ok: true }
   })
-  ipcMain.handle(IPC.SYNC_HEALTH_CHECK, wrap(() => runHealthCheck()))
-  ipcMain.handle(IPC.SYNC_HEALTH_CLEAN_ORPHANS, wrap((payload: { keys: string[] }) => cleanupOrphanObjects(payload.keys)))
-  ipcMain.handle(IPC.SYNC_HEALTH_REPAIR_BROKEN, wrap((payload: { ids: string[] }) => repairLocalBroken(payload.ids)))
+  ipcMain.handle(
+    IPC.SYNC_HEALTH_CHECK,
+    wrap(() => runHealthCheck())
+  )
+  ipcMain.handle(
+    IPC.SYNC_HEALTH_CLEAN_ORPHANS,
+    wrap((payload: { keys: string[] }) => cleanupOrphanObjects(payload.keys))
+  )
+  ipcMain.handle(
+    IPC.SYNC_HEALTH_REPAIR_BROKEN,
+    wrap((payload: { ids: string[] }) => repairLocalBroken(payload.ids))
+  )
   ipcMain.handle(
     IPC.SYNC_VERIFY_INTEGRITY,
     wrap(() =>
       verifyIntegrity((current, total) => {
         for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send('sync:progress', { phase: 'finalizing', current, total, message: '校验文件完整性…' })
+          win.webContents.send('sync:progress', {
+            phase: 'finalizing',
+            current,
+            total,
+            message: '校验文件完整性…'
+          })
         }
       })
     )
   )
-  ipcMain.handle(IPC.SYNC_DOWNLOAD_ESTIMATE, wrap(() => estimateDownload()))
+  ipcMain.handle(
+    IPC.SYNC_DOWNLOAD_ESTIMATE,
+    wrap(() => estimateDownload())
+  )
 
   // ---------- 轮播 ----------
   ipcMain.handle(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
-  ipcMain.handle(IPC.SLIDESHOW_SET, wrap((patch: Parameters<typeof setSlideshowConfig>[0]) => setSlideshowConfig(patch)))
-  ipcMain.handle(IPC.SLIDESHOW_NEXT, wrap(() => nextSlideshowNow()))
+  ipcMain.handle(
+    IPC.SLIDESHOW_SET,
+    wrap((patch: Parameters<typeof setSlideshowConfig>[0]) => setSlideshowConfig(patch))
+  )
+  ipcMain.handle(
+    IPC.SLIDESHOW_NEXT,
+    wrap(() => nextSlideshowNow())
+  )
 
   // ---------- 悬浮球 ----------
   ipcMain.handle(

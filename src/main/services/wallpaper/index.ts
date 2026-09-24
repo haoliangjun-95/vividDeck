@@ -36,9 +36,7 @@ export async function applyWallpaper(
 
   const monitors = await listMonitors()
   // 过滤掉当前已不存在的显示器（拔掉的外接屏等场景自动跳过）
-  const targets = monitorIds.length
-    ? monitors.filter((m) => monitorIds.includes(m.id))
-    : monitors
+  const targets = monitorIds.length ? monitors.filter((m) => monitorIds.includes(m.id)) : monitors
   if (targets.length === 0) throw new Error('未找到可用的显示器')
 
   const applied: string[] = []

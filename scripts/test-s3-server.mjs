@@ -23,5 +23,7 @@ server.run((err, { address, port } = {}) => {
     console.error('s3rver 启动失败:', err)
     process.exit(1)
   }
-  console.log(`s3rver 测试服务已启动: http://${address}:${port} (bucket: vividdeck, ak/sk: S3RVER/S3RVER)`)
+  console.log(
+    `s3rver 测试服务已启动: http://${address}:${port} (bucket: vividdeck, ak/sk: S3RVER/S3RVER)`
+  )
 })
