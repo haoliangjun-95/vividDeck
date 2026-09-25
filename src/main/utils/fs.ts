@@ -31,7 +31,10 @@ export function hashFile(filePath: string): Promise<string> {
 
 /** 文件名安全化：去除路径分隔符与非法字符 */
 export function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim()
+  const cleaned = name
+    .replace(/[/\\:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
   return cleaned.length ? cleaned.slice(0, 200) : '未命名'
 }
 
@@ -43,7 +46,9 @@ export function sanitizeFileName(name: string): string {
  * 都以 `_` 作分隔符，id 段不含 `_` 才能保证前缀匹配无歧义。
  */
 export function sanitizeIdSegment(id: string): string {
-  const cleaned = String(id).replace(/[^0-9A-Za-z-]/g, '-').slice(0, 64)
+  const cleaned = String(id)
+    .replace(/[^0-9A-Za-z-]/g, '-')
+    .slice(0, 64)
   return cleaned.length ? cleaned : '-'
 }
 

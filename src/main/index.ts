@@ -5,7 +5,18 @@
  * - media:// 自定义协议：渲染层按图片 ID 安全加载缩略图/预览/原图
  * - 主题跟随系统（nativeTheme → 渲染层 html.dark）
  */
-import { app, BrowserWindow, dialog, Menu, Tray, nativeTheme, net, protocol, shell, nativeImage } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  Tray,
+  nativeTheme,
+  net,
+  protocol,
+  shell,
+  nativeImage
+} from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { registerIpcHandlers } from './ipc'
@@ -15,11 +26,22 @@ import { customStorageDirMissing } from './services/paths'
 import { flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
+import { initLogger, installCrashHandlers } from './services/logger'
 import { flushSyncConfig } from './services/sync/store'
 import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
-import { flushBubble, initBubble, isBubbleVisible, onBubbleOpenMain, setBubbleEnabled } from './bubble'
+import {
+  flushBubble,
+  initBubble,
+  isBubbleVisible,
+  onBubbleOpenMain,
+  setBubbleEnabled
+} from './bubble'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// ---------- 日志落盘 + 崩溃兜底（#14，须尽早，先于单实例锁与各服务初始化） ----------
+initLogger()
+installCrashHandlers()
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -120,8 +142,7 @@ function rebuildTrayMenu(): void {
       { label: '下一张壁纸', click: () => trayNext() },
       {
         label: '立即同步',
-        click: () =>
-          void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
+        click: () => void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
       },
       { type: 'separator' },
       {
@@ -172,7 +193,13 @@ function createAppMenu(): void {
         { role: 'togglefullscreen', label: '全屏' }
       ]
     },
-    { label: '窗口', submenu: [{ role: 'minimize', label: '最小化' }, { role: 'close', label: '关闭' }] }
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭' }
+      ]
+    }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -196,7 +223,10 @@ app.whenReady().then(() => {
       // 形如 media://thumb/<imageId>
       const match = /^media:\/\/(thumb|preview|original)\/([\w-]+)(?:\?.*)?$/.exec(request.url)
       if (!match) return new Response('Not Found', { status: 404 })
-      const filePath = await resolveMediaPath(match[1] as 'thumb' | 'preview' | 'original', match[2])
+      const filePath = await resolveMediaPath(
+        match[1] as 'thumb' | 'preview' | 'original',
+        match[2]
+      )
       if (!filePath) return new Response('Not Found', { status: 404 })
       // pathToFileURL 正确处理中文/空格/特殊字符；net.fetch 返回带 MIME 的流式响应
       return await net.fetch(pathToFileURL(filePath).toString())

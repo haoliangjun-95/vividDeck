@@ -2,8 +2,18 @@
  * 素材库状态：数据 + 筛选 + 排序 + 全部业务动作（渲染层唯一数据源）
  */
 import { create } from 'zustand'
-import type { Category, ImageItem, ImportResult, LibraryData, LibraryFilter, SmartAlbum, SmartAlbumRules } from '@shared/types'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import type {
+  Category,
+  ImageItem,
+  ImportResult,
+  LibraryData,
+  LibraryFilter,
+  SmartAlbum,
+  SmartAlbumRules
+} from '@shared/types'
 import { matchAlbum } from '@shared/album'
+import { sanitizeFilter, sanitizeSort } from '../lib/prefs'
 
 export type SortKey = 'added-desc' | 'added-asc' | 'name-asc' | 'size-desc'
 
@@ -32,7 +42,8 @@ interface LibraryState {
   removeMany: (ids: string[]) => Promise<void>
   /** 批量：按图设置标签（增/删混合，单次事务） */
   setTagsMany: (entries: { id: string; tags: string[] }[]) => Promise<void>
-  addAlbum: (name: string, rules: SmartAlbumRules) => Promise<void>
+  /** 新建相册；resolve 新相册 id（用于创建后自动选中），失败时 reject */
+  addAlbum: (name: string, rules: SmartAlbumRules) => Promise<string | null>
   updateAlbum: (id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>) => Promise<void>
   deleteAlbum: (id: string) => Promise<void>
   addCategory: (name: string) => Promise<void>
@@ -50,119 +61,147 @@ const DEFAULT_FILTER: LibraryFilter = {
   albumId: null,
   minWidth: 0,
   minSizeMB: 0,
-  maxSizeMB: 0
+  maxSizeMB: 0,
+  health: null
 }
 
-export const useLibraryStore = create<LibraryState>((set, get) => ({
-  images: [],
-  categories: [],
-  tags: [],
-  albums: [],
-  loaded: false,
-  importing: false,
-  filter: DEFAULT_FILTER,
-  sort: 'added-desc',
+export const useLibraryStore = create<LibraryState>()(
+  persist(
+    (set, get) => ({
+      images: [],
+      categories: [],
+      tags: [],
+      albums: [],
+      loaded: false,
+      importing: false,
+      filter: DEFAULT_FILTER,
+      sort: 'added-desc',
 
-  load: async () => {
-    const data = await window.api.getLibrary()
-    get().applyData(data)
-    set({ loaded: true })
-  },
+      load: async () => {
+        const data = await window.api.getLibrary()
+        get().applyData(data)
+        set({ loaded: true })
+      },
 
-  applyData: (data) =>
-    set({ images: data.images, categories: data.categories, tags: data.tags, albums: data.albums ?? [] }),
+      applyData: (data) =>
+        set({
+          images: data.images,
+          categories: data.categories,
+          tags: data.tags,
+          albums: data.albums ?? []
+        }),
 
-  importFiles: async (paths) => {
-    set({ importing: true })
-    try {
-      const result = await window.api.importPaths(paths)
-      await get().load()
-      return result
-    } finally {
-      set({ importing: false })
+      importFiles: async (paths) => {
+        set({ importing: true })
+        try {
+          const result = await window.api.importPaths(paths)
+          await get().load()
+          return result
+        } finally {
+          set({ importing: false })
+        }
+      },
+
+      toggleFavorite: async (id) => {
+        const image = get().images.find((img) => img.id === id)
+        if (!image) return
+        const data = await window.api.updateImage(id, { favorite: !image.favorite })
+        get().applyData(data)
+      },
+
+      assignCategory: async (id, categoryId) => {
+        const data = await window.api.updateImage(id, { categoryId })
+        get().applyData(data)
+      },
+
+      setTags: async (id, tags) => {
+        const data = await window.api.updateImage(id, { tags })
+        get().applyData(data)
+      },
+
+      rename: async (id, fileName) => {
+        const data = await window.api.renameImage(id, fileName)
+        get().applyData(data)
+      },
+
+      remove: async (id) => {
+        const data = await window.api.deleteImage(id)
+        get().applyData(data)
+      },
+
+      assignCategoryMany: async (ids, categoryId) => {
+        const data = await window.api.updateImages(ids, { categoryId })
+        get().applyData(data)
+      },
+
+      removeMany: async (ids) => {
+        const data = await window.api.deleteImages(ids)
+        get().applyData(data)
+      },
+
+      setTagsMany: async (entries) => {
+        const data = await window.api.setTagsMany(entries)
+        get().applyData(data)
+      },
+
+      addAlbum: async (name, rules) => {
+        const before = new Set(get().albums.map((a) => a.id))
+        const data = await window.api.addAlbum(name, rules)
+        get().applyData(data)
+        return data.albums.find((a) => !before.has(a.id))?.id ?? null
+      },
+
+      updateAlbum: async (id, patch) => {
+        const data = await window.api.updateAlbum(id, patch)
+        get().applyData(data)
+      },
+
+      deleteAlbum: async (id) => {
+        const data = await window.api.deleteAlbum(id)
+        get().applyData(data)
+      },
+
+      addCategory: async (name) => {
+        const data = await window.api.addCategory(name)
+        get().applyData(data)
+      },
+
+      renameCategory: async (id, name) => {
+        const data = await window.api.renameCategory(id, name)
+        get().applyData(data)
+      },
+
+      reorderCategories: async (ids) => {
+        const data = await window.api.reorderCategories(ids)
+        get().applyData(data)
+      },
+
+      deleteCategory: async (id) => {
+        const data = await window.api.deleteCategory(id)
+        get().applyData(data)
+      },
+
+      setFilter: (patch) => set({ filter: { ...get().filter, ...patch } }),
+      setSort: (sort) => set({ sort })
+    }),
+    {
+      // #7 状态持久化：仅记忆筛选与排序。health 为体检深链瞬态快照（体积大且重启即失效），
+      // 写入前剥离、恢复时经 lib/prefs 边界清洗（断言见 tests/prefs.test.ts）
+      name: 'vd-library-prefs',
+      version: 1,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ filter: { ...s.filter, health: null }, sort: s.sort }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as { filter?: unknown; sort?: unknown }
+        return {
+          ...current,
+          filter: sanitizeFilter(p.filter, current.filter),
+          sort: sanitizeSort(p.sort, current.sort)
+        }
+      }
     }
-  },
-
-  toggleFavorite: async (id) => {
-    const image = get().images.find((img) => img.id === id)
-    if (!image) return
-    const data = await window.api.updateImage(id, { favorite: !image.favorite })
-    get().applyData(data)
-  },
-
-  assignCategory: async (id, categoryId) => {
-    const data = await window.api.updateImage(id, { categoryId })
-    get().applyData(data)
-  },
-
-  setTags: async (id, tags) => {
-    const data = await window.api.updateImage(id, { tags })
-    get().applyData(data)
-  },
-
-  rename: async (id, fileName) => {
-    const data = await window.api.renameImage(id, fileName)
-    get().applyData(data)
-  },
-
-  remove: async (id) => {
-    const data = await window.api.deleteImage(id)
-    get().applyData(data)
-  },
-
-  assignCategoryMany: async (ids, categoryId) => {
-    const data = await window.api.updateImages(ids, { categoryId })
-    get().applyData(data)
-  },
-
-  removeMany: async (ids) => {
-    const data = await window.api.deleteImages(ids)
-    get().applyData(data)
-  },
-
-  setTagsMany: async (entries) => {
-    const data = await window.api.setTagsMany(entries)
-    get().applyData(data)
-  },
-
-  addAlbum: async (name, rules) => {
-    const data = await window.api.addAlbum(name, rules)
-    get().applyData(data)
-  },
-
-  updateAlbum: async (id, patch) => {
-    const data = await window.api.updateAlbum(id, patch)
-    get().applyData(data)
-  },
-
-  deleteAlbum: async (id) => {
-    const data = await window.api.deleteAlbum(id)
-    get().applyData(data)
-  },
-
-  addCategory: async (name) => {
-    const data = await window.api.addCategory(name)
-    get().applyData(data)
-  },
-
-  renameCategory: async (id, name) => {
-    const data = await window.api.renameCategory(id, name)
-    get().applyData(data)
-  },
-
-  reorderCategories: async (ids) => {
-    const data = await window.api.reorderCategories(ids)
-    get().applyData(data)
-  },
-
-  deleteCategory: async (id) => {
-    const data = await window.api.deleteCategory(id)
-    get().applyData(data)
-  },
-
-  setFilter: (patch) => set({ filter: { ...get().filter, ...patch } }),
-  setSort: (sort) => set({ sort })
-}))
+  )
+)
 
 /**
  * selectFilteredImages 的模块级记忆化缓存。
@@ -194,10 +233,13 @@ export function selectFilteredImages(state: LibraryState): ImageItem[] {
 
   const kw = filter.keyword.trim().toLowerCase()
   const album = albums.find((a) => a.id === filter.albumId)
+  // 体检深链：命中报告中的 id 集合（空集合 = 无匹配）
+  const healthIds = filter.health ? new Set(filter.health.ids) : null
 
   const filtered = images.filter((img) => {
     // 智能相册规则（与其他条件 AND 叠加）
     if (album && !matchAlbum(img, album)) return false
+    if (healthIds && !healthIds.has(img.id)) return false
     if (filter.categoryId === 'favorites') {
       if (!img.favorite) return false
     } else if (filter.categoryId === 'uncategorized') {

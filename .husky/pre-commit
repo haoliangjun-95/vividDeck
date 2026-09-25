@@ -1,0 +1,2 @@
+# 批次2 #13：format → lint（仅暂存文件）
+npx lint-staged

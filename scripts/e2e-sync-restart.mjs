@@ -10,7 +10,7 @@ const assert = (cond, label) => {
 }
 
 async function cdp(port) {
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json()))
+  const targets = await await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json())
   const page = targets.find((t) => t.type === 'page' && t.url.endsWith('index.html'))
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((res, rej) => {
@@ -29,9 +29,21 @@ async function cdp(port) {
   const evaluate = async (expression) => {
     const id = ++seq
     const p = new Promise((r) => pending.set(id, r))
-    ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+    ws.send(
+      JSON.stringify({
+        id,
+        method: 'Runtime.evaluate',
+        params: { expression, awaitPromise: true, returnByValue: true }
+      })
+    )
     const res = await p
-    if (res.result?.exceptionDetails) throw new Error('页面执行出错: ' + JSON.stringify(res.result.exceptionDetails.exception?.description ?? res.result.exceptionDetails))
+    if (res.result?.exceptionDetails)
+      throw new Error(
+        '页面执行出错: ' +
+          JSON.stringify(
+            res.result.exceptionDetails.exception?.description ?? res.result.exceptionDetails
+          )
+      )
     return res.result?.result.value
   }
   return { evaluate, close: () => ws.close() }
@@ -66,14 +78,21 @@ for (const x of [A, B]) {
 const sharp = (await import('sharp')).default
 const img1 = path.join(os.tmpdir(), 'vd-reg-1.jpg')
 const img2 = path.join(os.tmpdir(), 'vd-reg-2.jpg')
-await sharp({ create: { width: 2000, height: 1400, channels: 3, background: '#0ea5e9' } }).jpeg().toFile(img1)
-await sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#f59e0b' } }).jpeg().toFile(img2)
+await sharp({ create: { width: 2000, height: 1400, channels: 3, background: '#0ea5e9' } })
+  .jpeg()
+  .toFile(img1)
+await sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#f59e0b' } })
+  .jpeg()
+  .toFile(img2)
 const imp = await A.evaluate(`window.api.importPaths(${JSON.stringify([img1, img2])})`)
 assert(imp.added === 2, 'A 导入 2 张')
 await A.evaluate(`window.api.syncNow()`)
 await B.evaluate(`window.api.syncNow()`)
 let lib = await B.evaluate('window.api.getLibrary()')
-assert(lib.images.length === 2 && lib.images.every((i) => !i.localFile && i.path === ''), 'B 同步后 2 条云端记录（path 为空）')
+assert(
+  lib.images.length === 2 && lib.images.every((i) => !i.localFile && i.path === ''),
+  'B 同步后 2 条云端记录（path 为空）'
+)
 
 // ===== 关键步骤：重启 B（旧 bug 在重启时腐蚀全部云端记录）=====
 B.close()
@@ -104,10 +123,14 @@ const B2 = await cdp(9223)
 lib = await B2.evaluate('window.api.getLibrary()')
 const healed = lib.images.every((i) => !i.localFile && i.path === '')
 assert(healed, '重启后：损坏记录已自愈、云端记录未被腐蚀（全部 localFile=false 且 path 为空）')
-assert((await B2.evaluate('document.body.innerText.includes("全部下载到本地")')) === true, '重启后横幅出现')
+assert(
+  (await B2.evaluate('document.body.innerText.includes("全部下载到本地")')) === true,
+  '重启后横幅出现'
+)
 
-const id1 = lib.images[0].id
-const w = await B2.evaluate(`(async () => { return await Promise.race([ new Promise((res) => { const i = new Image(); i.onload = () => res(i.naturalWidth); i.onerror = () => res(-1); i.src = 'media://original/${lib.images[1].id}' }), new Promise((res) => setTimeout(() => res(-2), 30000)) ]) })()`)
+const w = await B2.evaluate(
+  `(async () => { return await Promise.race([ new Promise((res) => { const i = new Image(); i.onload = () => res(i.naturalWidth); i.onerror = () => res(-1); i.src = 'media://original/${lib.images[1].id}' }), new Promise((res) => setTimeout(() => res(-2), 30000)) ]) })()`
+)
 assert(w === 2000, '重启后点击云端图：实时下载原图并显示（宽 ' + w + '）')
 B2.close()
 console.log('== 重启回归 + 自愈验证全部通过 ==')

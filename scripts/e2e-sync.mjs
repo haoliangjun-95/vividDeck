@@ -22,19 +22,37 @@ async function cdp(port) {
   const page = targets.find((t) => t.type === 'page' && t.url.endsWith('index.html')) // 主窗口（排除悬浮球 bubble.html）
   if (!page) throw new Error(`端口 ${port} 无页面 target`)
   const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
+  await new Promise((res, rej) => {
+    ws.onopen = res
+    ws.onerror = rej
+  })
   let seq = 0
   const pending = new Map()
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data)
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
+    if (m.id && pending.has(m.id)) {
+      pending.get(m.id)(m)
+      pending.delete(m.id)
+    }
   }
   const evaluate = async (expression) => {
     const id = ++seq
     const p = new Promise((resolve) => pending.set(id, resolve))
-    ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }))
+    ws.send(
+      JSON.stringify({
+        id,
+        method: 'Runtime.evaluate',
+        params: { expression, awaitPromise: true, returnByValue: true }
+      })
+    )
     const res = await p
-    if (res.result?.exceptionDetails) throw new Error('页面执行出错: ' + JSON.stringify(res.result.exceptionDetails.exception?.description ?? res.result.exceptionDetails))
+    if (res.result?.exceptionDetails)
+      throw new Error(
+        '页面执行出错: ' +
+          JSON.stringify(
+            res.result.exceptionDetails.exception?.description ?? res.result.exceptionDetails
+          )
+      )
     return res.result?.result?.value
   }
   return { evaluate, close: () => ws.close() }
@@ -44,7 +62,9 @@ async function main() {
   // 测试图：img1（A 导入）、img1 同内容不同文件名（B 导入，验证跨设备去重）
   const tmp1 = path.join(os.tmpdir(), 'vd-sync-1.jpg')
   const tmp1dup = path.join(os.tmpdir(), 'vd-sync-1-dup.jpg')
-  await sharp({ create: { width: 2000, height: 1400, channels: 3, background: '#0ea5e9' } }).jpeg().toFile(tmp1)
+  await sharp({ create: { width: 2000, height: 1400, channels: 3, background: '#0ea5e9' } })
+    .jpeg()
+    .toFile(tmp1)
   fs.copyFileSync(tmp1, tmp1dup)
 
   const A = await cdp(9222)
@@ -55,7 +75,9 @@ async function main() {
   const preA = await A.evaluate('window.api.getLibrary()')
   const preB = await B.evaluate('window.api.getLibrary()')
   if (preA.images.length > 0 || preB.images.length > 0) {
-    throw new Error(`环境不干净（A:${preA.images.length} B:${preB.images.length}），请用 /tmp/vd-kill.sh 清理并重起实例`)
+    throw new Error(
+      `环境不干净（A:${preA.images.length} B:${preB.images.length}），请用 /tmp/vd-kill.sh 清理并重起实例`
+    )
   }
   console.log('  ✓ 双侧素材库为空，环境就绪')
 
@@ -79,9 +101,17 @@ async function main() {
   assert(sync1.uploaded >= 1, `A 上传 ${sync1.uploaded} 张`)
   // s3rver 的 fs 存储把对象内容存为 <key>._S3rver_object（另附 metadata/md5 边车）
   const bucket = '/tmp/vd-s3/vividdeck'
-  const manifestFiles = fs.readdirSync(`${bucket}/manifests`).filter((f) => f.endsWith('._S3rver_object'))
-  assert(manifestFiles.length === 1, `远端 manifest 已发布: ${manifestFiles[0].replace('._S3rver_object', '')}`)
-  assert(fs.existsSync(`${bucket}/objects/${imgHash}._S3rver_object`), '远端二进制 objects/<hash> 已上传')
+  const manifestFiles = fs
+    .readdirSync(`${bucket}/manifests`)
+    .filter((f) => f.endsWith('._S3rver_object'))
+  assert(
+    manifestFiles.length === 1,
+    `远端 manifest 已发布: ${manifestFiles[0].replace('._S3rver_object', '')}`
+  )
+  assert(
+    fs.existsSync(`${bucket}/objects/${imgHash}._S3rver_object`),
+    '远端二进制 objects/<hash> 已上传'
+  )
   const thumbsDir = fs.readdirSync(`${bucket}/thumbs`).filter((f) => f.endsWith('._S3rver_object'))
   assert(thumbsDir.length === 1, `远端缩略图已上传: ${thumbsDir[0].replace('._S3rver_object', '')}`)
 
@@ -90,7 +120,10 @@ async function main() {
   await B.evaluate(SYNC_CFG)
   await B.evaluate(`window.api.syncNow()`)
   const libB1 = await B.evaluate(`window.api.getLibrary()`)
-  assert(libB1.images.some((i) => i.id === imgId), 'B 拉取到 A 的图片记录')
+  assert(
+    libB1.images.some((i) => i.id === imgId),
+    'B 拉取到 A 的图片记录'
+  )
   const bImg = libB1.images.find((i) => i.id === imgId)
   assert(bImg.localFile === false, 'B 侧记录为云端态（localFile=false）')
   const statusB = await B.evaluate(`window.api.getSyncInfo().then(i => i.status)`)
@@ -127,7 +160,9 @@ async function main() {
   // 6) 离线并发导入同内容 → 合并期去重（跨设备各自导入同一文件）
   const tmp2 = path.join(os.tmpdir(), 'vd-sync-2.jpg')
   const tmp2dup = path.join(os.tmpdir(), 'vd-sync-2-dup.jpg')
-  await sharp({ create: { width: 1800, height: 1200, channels: 3, background: '#f59e0b' } }).jpeg().toFile(tmp2)
+  await sharp({ create: { width: 1800, height: 1200, channels: 3, background: '#f59e0b' } })
+    .jpeg()
+    .toFile(tmp2)
   fs.copyFileSync(tmp2, tmp2dup)
   await A.evaluate(`window.api.importPaths([${JSON.stringify(tmp2)}])`)
   await A.evaluate(`window.api.syncNow()`)
@@ -148,9 +183,14 @@ async function main() {
   await B.evaluate(`window.api.syncNow()`)
   await A.evaluate(`window.api.syncNow()`)
   const libA3 = await A.evaluate(`window.api.getLibrary()`)
-  assert(libA3.images.length === 1, '删除经墓碑传播，A 侧仅剩 img2（实际 ' + libA3.images.length + '）')
+  assert(
+    libA3.images.length === 1,
+    '删除经墓碑传播，A 侧仅剩 img2（实际 ' + libA3.images.length + '）'
+  )
   // 多次同步会产生多个清单快照，墓碑在删除方（B）最新发布的快照里
-  const allManifests = fs.readdirSync(`${bucket}/manifests`).filter((f) => f.endsWith('._S3rver_object'))
+  const allManifests = fs
+    .readdirSync(`${bucket}/manifests`)
+    .filter((f) => f.endsWith('._S3rver_object'))
   const anyTombstone = allManifests.some((f) => {
     const m = JSON.parse(fs.readFileSync(`${bucket}/manifests/${f}`, 'utf-8'))
     return m.tombstones?.some((t) => t.id === imgId)

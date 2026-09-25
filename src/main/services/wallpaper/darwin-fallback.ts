@@ -18,7 +18,9 @@ async function osa(script: string): Promise<string> {
   return stdout.trim()
 }
 
-export function osascriptListMonitors(displays: Electron.Display[] = screen.getAllDisplays()): MonitorInfo[] {
+export function osascriptListMonitors(
+  displays: Electron.Display[] = screen.getAllDisplays()
+): MonitorInfo[] {
   // desktop 对象顺序与 Electron displays 通常一一对应（主屏在前）
   return displays.map((display, index) => ({
     id: `darwin:${index}`,
@@ -34,9 +36,13 @@ export async function osascriptSetWallpaper(filePath: string, monitorId?: string
   // AppleScript 字符串中的双引号需要转义
   const posix = filePath.replace(/"/g, '\\"')
   if (!monitorId || monitorId === 'all') {
-    await osa(`tell application "System Events" to tell every desktop to set picture to POSIX file "${posix}"`)
+    await osa(
+      `tell application "System Events" to tell every desktop to set picture to POSIX file "${posix}"`
+    )
   } else {
     const index = Number(monitorId.split(':')[1]) + 1 // AppleScript 索引从 1 开始
-    await osa(`tell application "System Events" to tell desktop ${index} to set picture to POSIX file "${posix}"`)
+    await osa(
+      `tell application "System Events" to tell desktop ${index} to set picture to POSIX file "${posix}"`
+    )
   }
 }

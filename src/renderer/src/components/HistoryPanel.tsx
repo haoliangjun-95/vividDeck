@@ -52,14 +52,20 @@ export function HistoryPanel(): JSX.Element {
           return (
             <div key={item.id} className="card flex items-center gap-3 p-2.5">
               {image ? (
-                <img src={mediaUrl('thumb', image.id)} alt="" className="h-14 w-20 shrink-0 rounded-md object-cover" />
+                <img
+                  src={mediaUrl('thumb', image.id)}
+                  alt=""
+                  className="h-14 w-20 shrink-0 rounded-md object-cover"
+                />
               ) : (
                 <div className="flex h-14 w-20 shrink-0 items-center justify-center rounded-md bg-neutral-200 text-[10px] text-neutral-400 dark:bg-neutral-800">
                   已删除
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{image?.fileName ?? '（图片已不在素材库）'}</div>
+                <div className="truncate text-sm font-medium">
+                  {image?.fileName ?? '（图片已不在素材库）'}
+                </div>
                 <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-neutral-400">
                   <span>{formatTime(item.appliedAt)}</span>
                   <span>{FILL_MODE_LABELS[item.fillMode]}</span>

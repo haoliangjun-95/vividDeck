@@ -18,8 +18,12 @@ function FillModeDiagram({ mode, active }: { mode: FillMode; active: boolean }):
       }`}
     >
       {mode === 'fill' && <div className={`${box} inset-0`} />}
-      {mode === 'stretch' && <div className={`${box} inset-0 [clip-path:polygon(10%_25%,90%_10%,90%_80%,10%_70%)]`} />}
-      {mode === 'center' && <div className={`${box} left-1/2 top-1/2 h-4 w-8 -translate-x-1/2 -translate-y-1/2`} />}
+      {mode === 'stretch' && (
+        <div className={`${box} inset-0 [clip-path:polygon(10%_25%,90%_10%,90%_80%,10%_70%)]`} />
+      )}
+      {mode === 'center' && (
+        <div className={`${box} left-1/2 top-1/2 h-4 w-8 -translate-x-1/2 -translate-y-1/2`} />
+      )}
       {mode === 'fit' && <div className={`${box} inset-x-1 top-1/2 h-5 -translate-y-1/2`} />}
     </div>
   )
@@ -81,7 +85,11 @@ export function SetWallpaperDialog(): JSX.Element | null {
       <div className="space-y-5">
         {/* 预览 */}
         <div className="flex items-center gap-4">
-          <img src={`media://thumb/${image.id}`} alt="" className="h-20 w-28 rounded-lg object-cover shadow" />
+          <img
+            src={`media://thumb/${image.id}`}
+            alt=""
+            className="h-20 w-28 rounded-lg object-cover shadow"
+          />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">{image.fileName}</div>
             <div className="text-xs text-neutral-400">
@@ -106,7 +114,9 @@ export function SetWallpaperDialog(): JSX.Element | null {
                       : 'border-neutral-300 hover:border-neutral-400 dark:border-neutral-700'
                   }`}
                   onClick={() =>
-                    setSelected((prev) => (prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id]))
+                    setSelected((prev) =>
+                      prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                    )
                   }
                 >
                   {m.scaleFactor > 1.5 ? <MonitorSmartphone size={18} /> : <Monitor size={18} />}
@@ -119,7 +129,9 @@ export function SetWallpaperDialog(): JSX.Element | null {
                   </div>
                   <span
                     className={`h-4 w-4 shrink-0 rounded-full border-2 ${
-                      active ? 'border-indigo-500 bg-indigo-500' : 'border-neutral-300 dark:border-neutral-600'
+                      active
+                        ? 'border-indigo-500 bg-indigo-500'
+                        : 'border-neutral-300 dark:border-neutral-600'
                     }`}
                   />
                 </button>
@@ -147,7 +159,9 @@ export function SetWallpaperDialog(): JSX.Element | null {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-neutral-400">{MODE_HINTS[fillMode]}（自动适配所选显示器的物理分辨率）</p>
+          <p className="mt-2 text-xs text-neutral-400">
+            {MODE_HINTS[fillMode]}（自动适配所选显示器的物理分辨率）
+          </p>
           <label className="mt-2 flex cursor-pointer select-none items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
             <input
               type="checkbox"
@@ -163,7 +177,11 @@ export function SetWallpaperDialog(): JSX.Element | null {
           <button className="btn-ghost" onClick={close}>
             取消
           </button>
-          <button className="btn-primary" disabled={busy || selected.length === 0} onClick={() => void apply()}>
+          <button
+            className="btn-primary"
+            disabled={busy || selected.length === 0}
+            onClick={() => void apply()}
+          >
             {busy ? '设置中…' : '设为壁纸'}
           </button>
         </div>

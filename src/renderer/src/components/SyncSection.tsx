@@ -3,10 +3,27 @@
  * 连接配置（密钥加密存储）/ 测试连接 / 启用与自动同步 / 状态与进度 / 批量下载
  */
 import React, { useEffect, useState } from 'react'
-import { CloudDownload, CloudUpload, HardDriveDownload, Loader2, RefreshCw } from 'lucide-react'
+import {
+  AlertTriangle,
+  CloudDownload,
+  CloudUpload,
+  HardDriveDownload,
+  Loader2,
+  RefreshCw
+} from 'lucide-react'
 import { useUIStore } from '../store/ui'
+import { useLibraryStore } from '../store/library'
 import { formatTime } from '../lib/utils'
-import type { SyncConfig, SyncConfigPatch, SyncHealthReport, SyncProgress, SyncStatus } from '@shared/types'
+import { FUSE_MAX_COUNT, FUSE_MIN_COUNT, FUSE_RATIO } from '@shared/syncFuse'
+import type {
+  SyncConfig,
+  SyncConfigPatch,
+  SyncHealthReport,
+  SyncProgress,
+  SyncResultStats,
+  SyncScope,
+  SyncStatus
+} from '@shared/types'
 import { formatBytes } from '../lib/utils'
 
 const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
@@ -19,6 +36,9 @@ const PHASE_LABELS: Record<SyncProgress['phase'], string> = {
 
 export function SyncSection(): JSX.Element | null {
   const toast = useUIStore((s) => s.toast)
+  // #9 选择性同步：范围勾选列表的数据源（素材库分类与智能相册）
+  const categories = useLibraryStore((s) => s.categories)
+  const albums = useLibraryStore((s) => s.albums)
   const [config, setConfig] = useState<SyncConfig | null>(null)
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [secretSet, setSecretSet] = useState(false)
@@ -26,13 +46,21 @@ export function SyncSection(): JSX.Element | null {
   const [testing, setTesting] = useState(false)
   const [progress, setProgress] = useState<SyncProgress | null>(null)
   const [busyDownload, setBusyDownload] = useState(false)
+  /** #10 墓碑保险丝：同步因纯远端删除过多而暂停时，等待用户确认的统计 */
+  const [fuse, setFuse] = useState<NonNullable<SyncResultStats['fuse']> | null>(null)
+  /** 配置加载失败信息（IPC 异常时展示错误态而非静默消失） */
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const reload = (): void => {
-    void window.api.getSyncInfo().then((info) => {
-      setConfig(info.config)
-      setStatus(info.status)
-      setSecretSet(info.secretSet)
-    })
+    window.api
+      .getSyncInfo()
+      .then((info) => {
+        setConfig(info.config)
+        setStatus(info.status)
+        setSecretSet(info.secretSet)
+        setLoadError(null)
+      })
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : String(err)))
   }
 
   useEffect(() => {
@@ -41,9 +69,19 @@ export function SyncSection(): JSX.Element | null {
     const offDone = window.api.onSyncDone((r) => {
       setProgress(null)
       reload()
-      if (r.ok && r.stats) {
+      if (r.ok && r.stats?.fuse) {
+        // #10 保险丝触发：合并已暂停，本地保持同步前状态，等待用户确认
+        setFuse(r.stats.fuse)
+        toast(
+          `同步已暂停：远端请求删除 ${r.stats.fuse.deletedCount} 张本地图片，请在同步设置中确认`,
+          'error'
+        )
+      } else if (r.ok && r.stats) {
+        setFuse(null)
         const s = r.stats
-        toast(`同步完成：拉取 ${s.pulled} 条，上传 ${s.uploaded} 张，耗时 ${(s.durationMs / 1000).toFixed(1)}s`)
+        toast(
+          `同步完成：拉取 ${s.pulled} 条，上传 ${s.uploaded} 张，耗时 ${(s.durationMs / 1000).toFixed(1)}s`
+        )
       } else if (!r.ok) {
         toast(`同步失败：${r.error}`, 'error')
       }
@@ -54,7 +92,24 @@ export function SyncSection(): JSX.Element | null {
     }
   }, [toast])
 
-  if (!config) return null
+  if (!config) {
+    // 加载失败时给出可读错误态（此前静默返回 null，整个同步区消失无从排查）
+    if (!loadError) return null
+    return (
+      <section className="space-y-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <CloudUpload size={14} />
+          多设备同步（MinIO）
+        </div>
+        <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/50 dark:text-red-400">
+          同步配置加载失败：{loadError}
+          <button className="ml-2 underline hover:no-underline" onClick={reload}>
+            重试
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   const patch = async (p: SyncConfigPatch): Promise<void> => {
     try {
@@ -63,6 +118,28 @@ export function SyncSection(): JSX.Element | null {
     } catch (err) {
       toast(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
+  }
+
+  // #9 同步范围：主进程 JsonStore 已做默认值浅合并，这里再兜底一次防旧数据
+  const scope: SyncScope = config.scope ?? { type: 'all' }
+
+  const setScopeType = (type: SyncScope['type']): void => {
+    if (scope.type === type) return
+    const next: SyncScope =
+      type === 'all'
+        ? { type: 'all' }
+        : type === 'categories'
+          ? { type: 'categories', ids: [] }
+          : { type: 'albums', ids: [] }
+    void patch({ scope: next })
+  }
+
+  const toggleScopeId = (id: string): void => {
+    if (scope.type === 'all') return
+    const ids = scope.ids.includes(id) ? scope.ids.filter((x) => x !== id) : [...scope.ids, id]
+    const next: SyncScope =
+      scope.type === 'categories' ? { type: 'categories', ids } : { type: 'albums', ids }
+    void patch({ scope: next })
   }
 
   const saveAndTest = async (): Promise<void> => {
@@ -87,19 +164,27 @@ export function SyncSection(): JSX.Element | null {
     }
   }
 
-  const doSync = async (): Promise<void> => {
+  /** force = 用户已在保险丝确认卡片确认远端删除（#10） */
+  const doSync = async (force = false): Promise<void> => {
     try {
-      await window.api.syncNow()
+      await window.api.syncNow(force)
     } catch (err) {
       toast(`同步失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
   }
 
-  const doDownload = async (type: 'all' | 'favorite' | 'category', categoryId?: string): Promise<void> => {
+  const doDownload = async (
+    type: 'all' | 'favorite' | 'category',
+    categoryId?: string
+  ): Promise<void> => {
     setBusyDownload(true)
     try {
       const r = await window.api.syncDownload({ type, categoryId })
-      toast(r.failed > 0 ? `下载完成 ${r.downloaded} 张，失败 ${r.failed} 张` : `已下载 ${r.downloaded} 张到本地`)
+      toast(
+        r.failed > 0
+          ? `下载完成 ${r.downloaded} 张，失败 ${r.failed} 张`
+          : `已下载 ${r.downloaded} 张到本地`
+      )
     } catch (err) {
       toast(`下载失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
@@ -202,7 +287,11 @@ export function SyncSection(): JSX.Element | null {
           </label>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" disabled={testing} onClick={() => void saveAndTest()}>
+          <button
+            className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+            disabled={testing}
+            onClick={() => void saveAndTest()}
+          >
             {testing ? <Loader2 size={14} className="animate-spin" /> : null}
             {testing ? '测试中…' : '保存并测试连接'}
           </button>
@@ -246,12 +335,100 @@ export function SyncSection(): JSX.Element | null {
         </div>
       )}
 
+      {/* 同步范围（#9）：只约束图片上云与缩略图自动下载，元数据始终全量 */}
+      {status?.configured && (
+        <div className="card space-y-2 p-3">
+          <div className="text-sm">同步范围</div>
+          <div className="flex flex-wrap gap-3">
+            {(
+              [
+                ['all', '全部内容'],
+                ['categories', '按分类'],
+                ['albums', '按相册']
+              ] as const
+            ).map(([type, label]) => (
+              <label key={type} className="flex cursor-pointer items-center gap-1.5 text-xs">
+                <input
+                  type="radio"
+                  name="sync-scope-type"
+                  className="h-3.5 w-3.5 accent-indigo-600"
+                  checked={scope.type === type}
+                  onChange={() => setScopeType(type)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          {scope.type === 'categories' && (
+            <ScopeCheckList
+              items={categories.map((c) => ({ id: c.id, name: c.name }))}
+              selected={scope.ids}
+              emptyHint="暂无分类，请先在侧栏创建"
+              onToggle={toggleScopeId}
+            />
+          )}
+          {scope.type === 'albums' && (
+            <ScopeCheckList
+              items={albums.map((a) => ({ id: a.id, name: a.name }))}
+              selected={scope.ids}
+              emptyHint="暂无智能相册，请先在侧栏创建"
+              onToggle={toggleScopeId}
+            />
+          )}
+          {scope.type !== 'all' && (
+            <p className="text-[11px] text-neutral-400">
+              已选 {scope.ids.length} 项
+              {scope.ids.length === 0 ? '（当前范围下不会传输任何图片）' : ''}
+            </p>
+          )}
+          <p className="text-[11px] leading-relaxed text-neutral-400">
+            范围仅限制图片上云与缩略图自动下载；记录 / 分类 / 标签 /
+            相册等元数据始终全量同步，画廊中手动选择的批量下载不受范围限制。
+          </p>
+        </div>
+      )}
+
+      {/* #10 远端墓碑保险丝：确认卡片（同步已暂停，本地保持同步前状态） */}
+      {fuse && (
+        <div className="card space-y-2 border-amber-300 bg-amber-50 p-3 dark:border-amber-700/60 dark:bg-amber-950/40">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <AlertTriangle size={14} />
+            远端删除保护已触发
+          </div>
+          <p className="text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+            检测到 <strong>{fuse.deletedCount}</strong> 张本地存活图片将被「纯远端墓碑」删除（本地共{' '}
+            {fuse.localCount} 张，占{' '}
+            {fuse.localCount > 0 ? Math.round((fuse.deletedCount / fuse.localCount) * 100) : 0}
+            %），超过安全阈值（≥{FUSE_MIN_COUNT} 张且占比 &gt;{Math.round(FUSE_RATIO * 100)}%，或 ≥
+            {FUSE_MAX_COUNT} 张）。合并已暂停，素材库保持同步前状态。
+          </p>
+          <p className="text-xs leading-relaxed text-amber-800/80 dark:text-amber-300/80">
+            若确认这些删除来自你在其他设备上的有意操作（如批量清理），可继续同步；否则请先检查其他设备与远端桶是否异常。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" disabled={running} onClick={() => void doSync(true)}>
+              {running ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <AlertTriangle size={14} />
+              )}
+              确认删除并继续同步
+            </button>
+            <button className="btn-ghost" onClick={() => setFuse(null)}>
+              忽略
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 状态与操作 */}
       {status?.configured && config.enabled && (
         <div className="card space-y-2.5 p-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-400">
             <span>上次同步：{status.lastSyncAt ? formatTime(status.lastSyncAt) : '从未'}</span>
-            {status.cloudOnlyCount > 0 && <span>云端未下载：{status.cloudOnlyCount} 张（按需下载）</span>}
+            {status.cloudOnlyCount > 0 && (
+              <span>云端未下载：{status.cloudOnlyCount} 张（按需下载）</span>
+            )}
           </div>
           {status.lastError && (
             <div className="rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-600 dark:bg-red-950/50 dark:text-red-400">
@@ -261,7 +438,9 @@ export function SyncSection(): JSX.Element | null {
           {progress && (
             <div>
               <div className="mb-1 flex justify-between text-xs text-neutral-400">
-                <span>{PHASE_LABELS[progress.phase]} {progress.message}</span>
+                <span>
+                  {PHASE_LABELS[progress.phase]} {progress.message}
+                </span>
                 {progress.total > 0 && (
                   <span>
                     {progress.current}/{progress.total}
@@ -271,7 +450,10 @@ export function SyncSection(): JSX.Element | null {
               <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
                 <div
                   className="h-full rounded-full bg-indigo-500 transition-all"
-                  style={{ width: progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '100%' }}
+                  style={{
+                    width:
+                      progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '100%'
+                  }}
                 />
               </div>
             </div>
@@ -283,11 +465,17 @@ export function SyncSection(): JSX.Element | null {
             </button>
             {status.cloudOnlyCount > 0 && !busyDownload && (
               <>
-                <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" onClick={() => void doDownload('all')}>
+                <button
+                  className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+                  onClick={() => void doDownload('all')}
+                >
                   <CloudDownload size={14} />
                   全部下载（{status.cloudOnlyCount}）
                 </button>
-                <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" onClick={() => void doDownload('favorite')}>
+                <button
+                  className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+                  onClick={() => void doDownload('favorite')}
+                >
                   <HardDriveDownload size={14} />
                   下载收藏
                 </button>
@@ -302,7 +490,9 @@ export function SyncSection(): JSX.Element | null {
                 <button
                   className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
                   onClick={() => {
-                    void window.api.syncCancelDownload().then(() => toast('已发送取消信号，正在停止下载…', 'info'))
+                    void window.api
+                      .syncCancelDownload()
+                      .then(() => toast('已发送取消信号，正在停止下载…', 'info'))
                   }}
                 >
                   取消
@@ -322,14 +512,22 @@ export function SyncSection(): JSX.Element | null {
   )
 }
 
-
 /** 同步体检：三方对账结果 + 修复动作 + 完整性校验 + 下载容量预估 */
 function HealthCheckSection(): JSX.Element | null {
   const toast = useUIStore((st) => st.toast)
+  const closeDrawer = useUIStore((st) => st.closeDrawer)
+  const setFilter = useLibraryStore((st) => st.setFilter)
   const [report, setReport] = useState<SyncHealthReport | null>(null)
   const [checking, setChecking] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [estimate, setEstimate] = useState<{ count: number; sizeBytes: number } | null>(null)
+
+  /** 深链：画廊过滤到该问题影响的图片，并关闭设置抽屉便于查看 */
+  const openHealthFilter = (label: string, ids: string[]): void => {
+    setFilter({ health: { label, ids } })
+    closeDrawer()
+    toast(`已在画廊过滤出「${label}」${ids.length} 张`)
+  }
 
   const run = async (): Promise<void> => {
     setChecking(true)
@@ -347,13 +545,23 @@ function HealthCheckSection(): JSX.Element | null {
 
   if (checking === false && report === null && estimate === null) {
     return (
-      <button className="btn-ghost w-full justify-center border border-neutral-300 text-xs dark:border-neutral-700" onClick={() => void run()}>
+      <button
+        className="btn-ghost w-full justify-center border border-neutral-300 text-xs dark:border-neutral-700"
+        onClick={() => void run()}
+      >
         🔍 同步体检（检查云端孤儿 / 缺失原图 / 本地断链）
       </button>
     )
   }
 
-  const rows: { label: string; count: number; hint: string; action?: { label: string; onClick: () => void } }[] = []
+  const rows: {
+    label: string
+    count: number
+    hint: string
+    action?: { label: string; onClick: () => void }
+    /** 点击问题名跳转画廊查看受影响图片 */
+    deepLink?: { label: string; ids: string[] }
+  }[] = []
   if (report) {
     if (report.cloudOrphanObjects.length > 0) {
       rows.push({
@@ -363,7 +571,10 @@ function HealthCheckSection(): JSX.Element | null {
         action: {
           label: `清理 ${report.cloudOrphanObjects.length} 个`,
           onClick: () => {
-            if (!confirm(`删除桶中 ${report.cloudOrphanObjects.length} 个孤儿对象？此操作不可恢复。`)) return
+            if (
+              !confirm(`删除桶中 ${report.cloudOrphanObjects.length} 个孤儿对象？此操作不可恢复。`)
+            )
+              return
             void window.api.syncCleanOrphans(report.cloudOrphanObjects).then((n) => {
               toast(`已清理 ${n} 个孤儿对象`)
               void run()
@@ -376,7 +587,8 @@ function HealthCheckSection(): JSX.Element | null {
       rows.push({
         label: '云端缺失原图',
         count: report.missingBinaries.length,
-        hint: '这些图片只有元数据，桶中没有文件（需在有原图的设备重新上传）'
+        hint: '这些图片只有元数据，桶中没有文件（需在有原图的设备重新上传）',
+        deepLink: { label: '云端缺失原图', ids: report.missingBinaries.map((m) => m.id) }
       })
     }
     if (report.localBroken.length > 0) {
@@ -384,6 +596,7 @@ function HealthCheckSection(): JSX.Element | null {
         label: '本地文件断链',
         count: report.localBroken.length,
         hint: '记录标记为本地但文件丢失；可标记回云端后重新下载',
+        deepLink: { label: '本地文件断链', ids: report.localBroken.map((b) => b.id) },
         action: {
           label: `修复 ${report.localBroken.length} 条`,
           onClick: () => {
@@ -396,10 +609,19 @@ function HealthCheckSection(): JSX.Element | null {
       })
     }
     if (report.missingThumbs.length > 0) {
-      rows.push({ label: '缩略图缺失', count: report.missingThumbs.length, hint: '本地与云端均无缩略图（打开图片后自动补生成）' })
+      rows.push({
+        label: '缩略图缺失',
+        count: report.missingThumbs.length,
+        hint: '本地与云端均无缩略图（打开图片后自动补生成）',
+        deepLink: { label: '缩略图缺失', ids: report.missingThumbs.map((m) => m.id) }
+      })
     }
     if (report.expiredTombstonesCleaned.length > 0) {
-      rows.push({ label: '已清理过期墓碑', count: report.expiredTombstonesCleaned.length, hint: '90 天 TTL 自动清理' })
+      rows.push({
+        label: '已清理过期墓碑',
+        count: report.expiredTombstonesCleaned.length,
+        hint: '90 天 TTL 自动清理'
+      })
     }
   }
 
@@ -407,7 +629,11 @@ function HealthCheckSection(): JSX.Element | null {
     <div className="space-y-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium">同步体检</span>
-        <button className="btn-ghost !px-2 !py-0.5 text-[11px]" onClick={() => void run()} disabled={checking}>
+        <button
+          className="btn-ghost !px-2 !py-0.5 text-[11px]"
+          onClick={() => void run()}
+          disabled={checking}
+        >
           {checking ? '检查中…' : '重新检查'}
         </button>
       </div>
@@ -417,22 +643,46 @@ function HealthCheckSection(): JSX.Element | null {
           {estimate.count > 0 && (
             <>
               {' · '}
-              <button className="text-indigo-500 hover:underline" onClick={() => window.api.syncCancelDownload()}>
+              <button
+                className="text-indigo-500 hover:underline"
+                onClick={() => window.api.syncCancelDownload()}
+              >
                 取消进行中的下载
               </button>
             </>
           )}
         </div>
       )}
-      {rows.length === 0 && !checking && <div className="text-[11px] text-emerald-600 dark:text-emerald-400">✓ 一切正常，未发现问题</div>}
+      {rows.length === 0 && !checking && (
+        <div className="text-[11px] text-emerald-600 dark:text-emerald-400">
+          ✓ 一切正常，未发现问题
+        </div>
+      )}
       {rows.map((r) => (
         <div key={r.label} className="flex items-center justify-between gap-2 text-[11px]">
           <div className="min-w-0 flex-1">
-            <span className="font-medium text-amber-600 dark:text-amber-400">{r.label} × {r.count}</span>
+            <span className="font-medium text-amber-600 dark:text-amber-400">
+              {r.deepLink ? (
+                <button
+                  className="underline decoration-dotted underline-offset-2 hover:text-amber-700 dark:hover:text-amber-300"
+                  title="在画廊中过滤查看这些图片"
+                  onClick={() => r.deepLink && openHealthFilter(r.deepLink.label, r.deepLink.ids)}
+                >
+                  {r.label} × {r.count}
+                </button>
+              ) : (
+                <>
+                  {r.label} × {r.count}
+                </>
+              )}
+            </span>
             <span className="ml-1 text-neutral-400">{r.hint}</span>
           </div>
           {r.action && (
-            <button className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11px]" onClick={r.action.onClick}>
+            <button
+              className="btn-ghost shrink-0 !px-2 !py-0.5 text-[11px]"
+              onClick={r.action.onClick}
+            >
               {r.action.label}
             </button>
           )}
@@ -444,15 +694,57 @@ function HealthCheckSection(): JSX.Element | null {
         onClick={() => {
           if (!confirm('校验全部本地文件的完整性（内容哈希比对，大库耗时较长）？')) return
           setVerifying(true)
-          void window.api.syncVerifyIntegrity().then((bad) => {
-            setVerifying(false)
-            if (bad.length === 0) toast('完整性校验通过：全部本地文件与记录一致')
-            else toast(`${bad.length} 个文件内容与记录不符（可能已损坏）：${bad.slice(0, 3).map((b) => b.fileName).join('、')}${bad.length > 3 ? ' 等' : ''}`, 'error')
-          }).catch(() => setVerifying(false))
+          void window.api
+            .syncVerifyIntegrity()
+            .then((bad) => {
+              setVerifying(false)
+              if (bad.length === 0) toast('完整性校验通过：全部本地文件与记录一致')
+              else
+                toast(
+                  `${bad.length} 个文件内容与记录不符（可能已损坏）：${bad
+                    .slice(0, 3)
+                    .map((b) => b.fileName)
+                    .join('、')}${bad.length > 3 ? ' 等' : ''}`,
+                  'error'
+                )
+            })
+            .catch(() => setVerifying(false))
         }}
       >
         {verifying ? '校验中…' : '校验本地文件完整性（内容哈希比对）'}
       </button>
+    </div>
+  )
+}
+
+/** 同步范围勾选列表（#9：分类 / 相册两种维度共用） */
+function ScopeCheckList({
+  items,
+  selected,
+  emptyHint,
+  onToggle
+}: {
+  items: { id: string; name: string }[]
+  selected: string[]
+  emptyHint: string
+  onToggle: (id: string) => void
+}): JSX.Element {
+  if (items.length === 0) {
+    return <div className="text-xs text-neutral-400">{emptyHint}</div>
+  }
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-neutral-200 p-2 dark:border-neutral-700">
+      {items.map((it) => (
+        <label key={it.id} className="flex cursor-pointer items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-indigo-600"
+            checked={selected.includes(it.id)}
+            onChange={() => onToggle(it.id)}
+          />
+          {it.name}
+        </label>
+      ))}
     </div>
   )
 }

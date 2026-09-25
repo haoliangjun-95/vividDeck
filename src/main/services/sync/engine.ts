@@ -20,6 +20,8 @@ import type {
   SyncResultStats,
   SyncStatus
 } from '@shared/types'
+import { imageInSyncScope } from '@shared/syncScope'
+import { remoteOnlyDeletions, tombstoneFuseTripped } from '@shared/syncFuse'
 import { JsonStore } from '../store'
 import { isRealFile, libraryDir } from '../paths'
 import { assertInside, sanitizeFileName, sanitizeIdSegment } from '../../utils/fs'
@@ -129,7 +131,8 @@ function devSyncBlocked(): boolean {
 function makeClient(): { cfg: SyncConfig; client: import('minio').Client } | null {
   const cfg = getSyncConfig()
   if (!isConfigured()) return null
-  return { cfg, client: client.createClient(cfg, loadSecret()) }
+  // A3：单例客户端 —— 同一连接身份复用实例，省去每轮同步重建连接池
+  return { cfg, client: client.getClient(cfg, loadSecret()) }
 }
 
 export function getStatus(): SyncStatus {
@@ -146,8 +149,8 @@ export function getStatus(): SyncStatus {
   }
 }
 
-/** 完整同步（互斥） */
-export async function syncNow(): Promise<SyncResultStats> {
+/** 完整同步（互斥）；force = 用户已在保险丝确认卡片确认远端删除（#10） */
+export async function syncNow(opts?: { force?: boolean }): Promise<SyncResultStats> {
   if (running) throw new Error('同步正在进行中')
   if (devSyncBlocked()) throw new Error('开发模式下同步已禁用（设置 VD_ALLOW_DEV_SYNC=1 可开启）')
   const made = makeClient()
@@ -155,9 +158,21 @@ export async function syncNow(): Promise<SyncResultStats> {
   const { cfg, client: mc } = made
   const t0 = Date.now()
   running = true
-  const stats: SyncResultStats = { pushed: 0, pulled: 0, uploaded: 0, downloaded: 0, conflicts: 0, durationMs: 0 }
+  const stats: SyncResultStats = {
+    pushed: 0,
+    pulled: 0,
+    uploaded: 0,
+    downloaded: 0,
+    conflicts: 0,
+    durationMs: 0
+  }
   try {
-    progress({ phase: 'connecting', current: 0, total: 0, message: `连接 ${cfg.endpoint}:${cfg.port}…` })
+    progress({
+      phase: 'connecting',
+      current: 0,
+      total: 0,
+      message: `连接 ${cfg.endpoint}:${cfg.port}…`
+    })
     await client.testAndPrepareBucket(mc, cfg.bucket)
 
     // 1) 拉取全部清单
@@ -166,6 +181,28 @@ export async function syncNow(): Promise<SyncResultStats> {
 
     // 2) 合并
     const local = getLibrary()
+
+    // 1.5) #10 远端墓碑保险丝：纯远端墓碑删除超阈值 → 暂停合并（不落地/不上传/不下载），
+    // 本地保持同步前状态，返回 fuse 统计等待用户确认后以 force 重跑
+    if (opts?.force !== true) {
+      const fuseIds = remoteOnlyDeletions(
+        local.images,
+        listTombstones(),
+        manifests.map((m) => m.manifest)
+      )
+      if (tombstoneFuseTripped(local.images.length, fuseIds.length)) {
+        stats.fuse = { deletedCount: fuseIds.length, localCount: local.images.length }
+        stats.durationMs = Date.now() - t0
+        console.warn(
+          `[sync] 墓碑保险丝触发：${fuseIds.length}/${local.images.length} 张本地图片命中纯远端墓碑，已暂停合并等待确认`
+        )
+        engineStore.set({ lastSyncAt: Date.now(), lastError: null, lastResult: stats })
+        progress({ phase: 'finalizing', current: 1, total: 1, message: '同步已暂停：等待确认删除' })
+        broadcast(IPC_EVENTS.SYNC_DONE, { ok: true, stats })
+        return stats
+      }
+    }
+
     const merged = mergeAll({
       localImages: local.images,
       localCategories: local.categories,
@@ -195,9 +232,18 @@ export async function syncNow(): Promise<SyncResultStats> {
     }
 
     // 4) 下载远端新图的缩略图（小文件、并发 4；失败不阻塞同步）
-    const cloudImages = merged.images.filter((img) => !img.localFile)
+    // #9 选择性同步：范围外的云端图不自动拉取缩略图（画廊手动下载不受限）
+    const scopeAlbums = merged.albums ?? []
+    const cloudImages = merged.images.filter(
+      (img) => !img.localFile && imageInSyncScope(img, cfg.scope, scopeAlbums)
+    )
     if (cloudImages.length > 0) {
-      progress({ phase: 'downloading', current: 0, total: cloudImages.length, message: '同步缩略图…' })
+      progress({
+        phase: 'downloading',
+        current: 0,
+        total: cloudImages.length,
+        message: '同步缩略图…'
+      })
       let done = 0
       await runPool(cloudImages, 4, async (img) => {
         try {
@@ -209,7 +255,12 @@ export async function syncNow(): Promise<SyncResultStats> {
           /* 缩略图缺失仅影响首屏显示，下载原图后会补生成 */
         } finally {
           done++
-          progress({ phase: 'downloading', current: done, total: cloudImages.length, message: '同步缩略图…' })
+          progress({
+            phase: 'downloading',
+            current: done,
+            total: cloudImages.length,
+            message: '同步缩略图…'
+          })
         }
       })
     }
@@ -217,14 +268,23 @@ export async function syncNow(): Promise<SyncResultStats> {
     // 5) 上传缺失的二进制与缩略图（并发 2）
     const uploaded = getUploadedSet()
     const withFile = merged.images.filter((img) => img.localFile && isRealFile(img.path))
-    const needUpload = withFile.filter((img) => !uploaded.has(img.hash))
+    // #9 选择性同步：范围外的本地图片不上传二进制（元数据清单仍全量发布）
+    const needUpload = withFile.filter(
+      (img) => !uploaded.has(img.hash) && imageInSyncScope(img, cfg.scope, scopeAlbums)
+    )
     if (needUpload.length > 0) {
       progress({ phase: 'uploading', current: 0, total: needUpload.length, message: '' })
       let done = 0
       await runPool(needUpload, 2, async (img) => {
         try {
           if (!(await client.objectExists(mc, cfg.bucket, `objects/${img.hash}`))) {
-            await client.uploadFile(mc, cfg.bucket, `objects/${img.hash}`, img.path, 'application/octet-stream')
+            await client.uploadFile(
+              mc,
+              cfg.bucket,
+              `objects/${img.hash}`,
+              img.path,
+              'application/octet-stream'
+            )
           }
           // 缩略图一并上传（新设备画廊秒开的关键）
           const thumb = await ensureThumb(img)
@@ -238,7 +298,12 @@ export async function syncNow(): Promise<SyncResultStats> {
           console.error(`[sync] 上传失败 ${img.fileName}:`, err)
         } finally {
           done++
-          progress({ phase: 'uploading', current: done, total: needUpload.length, message: `上传 ${done}/${needUpload.length}` })
+          progress({
+            phase: 'uploading',
+            current: done,
+            total: needUpload.length,
+            message: `上传 ${done}/${needUpload.length}`
+          })
         }
       })
     }
@@ -247,7 +312,12 @@ export async function syncNow(): Promise<SyncResultStats> {
     if (merged.manifestToPublish) {
       progress({ phase: 'finalizing', current: 0, total: 0, message: '发布清单…' })
       const snapshot = { ...merged.manifestToPublish, updatedBy: getDeviceId() }
-      await client.putObjectJson(mc, cfg.bucket, `manifests/${getDeviceId()}-${Date.now()}.json`, snapshot)
+      await client.putObjectJson(
+        mc,
+        cfg.bucket,
+        `manifests/${getDeviceId()}-${Date.now()}.json`,
+        snapshot
+      )
       stats.pushed = snapshot.images.length
     }
 
@@ -257,9 +327,19 @@ export async function syncNow(): Promise<SyncResultStats> {
       updatedAt: Date.now(),
       updatedBy: getDeviceId(),
       images: merged.images.map((img) => ({
-        id: img.id, fileName: img.fileName, hash: img.hash, width: img.width, height: img.height,
-        sizeBytes: img.sizeBytes, format: img.format, categoryId: img.categoryId, tags: img.tags,
-        favorite: img.favorite, addedAt: img.addedAt, updatedAt: img.updatedAt, updatedBy: img.updatedBy ?? ''
+        id: img.id,
+        fileName: img.fileName,
+        hash: img.hash,
+        width: img.width,
+        height: img.height,
+        sizeBytes: img.sizeBytes,
+        format: img.format,
+        categoryId: img.categoryId,
+        tags: img.tags,
+        favorite: img.favorite,
+        addedAt: img.addedAt,
+        updatedAt: img.updatedAt,
+        updatedBy: img.updatedBy ?? ''
       })),
       categories: merged.categories,
       albums: merged.albums,
@@ -286,7 +366,9 @@ export async function syncNow(): Promise<SyncResultStats> {
 }
 
 /** 连接测试（不要求已启用） */
-export async function testConnection(): Promise<{ ok: true; bucketCreated: boolean } | { ok: false; error: string }> {
+export async function testConnection(): Promise<
+  { ok: true; bucketCreated: boolean } | { ok: false; error: string }
+> {
   const made = makeClient()
   if (!made) return { ok: false, error: '请先填写完整的连接信息（地址 / AccessKey / SecretKey）' }
   try {
@@ -351,9 +433,13 @@ export async function ensureLocal(imageId: string): Promise<string> {
 }
 
 /** 批量下载（离线准备；并发 3、可取消） */
-export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloaded: number; failed: number; cancelled?: boolean }> {
+export async function downloadScope(
+  scope: SyncDownloadScope
+): Promise<{ downloaded: number; failed: number; cancelled?: boolean }> {
+  const idSet = scope.type === 'ids' ? new Set(scope.ids ?? []) : null
   const images = getLibrary().images.filter((img) => {
     if (img.localFile) return false
+    if (idSet) return idSet.has(img.id)
     if (scope.type === 'favorite') return img.favorite
     if (scope.type === 'category') return img.categoryId === scope.categoryId
     return true
@@ -370,7 +456,12 @@ export async function downloadScope(scope: SyncDownloadScope): Promise<{ downloa
     } catch {
       failed++
     }
-    progress({ phase: 'downloading', current: downloaded + failed, total: images.length, message: `下载 ${downloaded + failed}/${images.length}` })
+    progress({
+      phase: 'downloading',
+      current: downloaded + failed,
+      total: images.length,
+      message: `下载 ${downloaded + failed}/${images.length}`
+    })
   })
   return { downloaded, failed, cancelled: downloadCancelled }
 }

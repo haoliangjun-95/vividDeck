@@ -173,6 +173,14 @@ export interface AppSettings {
 // ==================== 二期：MinIO 多设备同步 ====================
 
 /** MinIO 连接配置（secretKey 经 safeStorage 加密单独存储，不在此明文） */
+/**
+ * 选择性同步范围（#9）：只约束二进制原图与缩略图的上传/自动下载，
+ * 元数据（记录/分类/标签/相册/墓碑）清单始终全量同步；
+ * 画廊手动选中的批量下载不受范围限制（显式操作优先）。
+ */
+export type SyncScope =
+  { type: 'all' } | { type: 'categories'; ids: string[] } | { type: 'albums'; ids: string[] }
+
 export interface SyncConfig {
   enabled: boolean
   /** 服务地址（域名或 IP，不含协议） */
@@ -183,6 +191,8 @@ export interface SyncConfig {
   accessKey: string
   /** 启动与变更后自动同步（关闭则仅手动触发） */
   autoSync: boolean
+  /** 选择性同步范围（#9）；旧配置缺失时按 all 处理（JsonStore 默认值浅合并） */
+  scope: SyncScope
 }
 
 /** SYNC_SET_CONFIG 的请求载荷：配置补丁 + 一次性标志（不持久化，主进程消费后剥离） */
@@ -212,6 +222,11 @@ export interface SyncResultStats {
   downloaded: number
   conflicts: number
   durationMs: number
+  /**
+   * #10 远端墓碑保险丝：该字段存在表示本次同步检测到「纯远端墓碑」删除过多，
+   * 已暂停合并（本地保持同步前状态），等待用户在确认卡片中以 force 重跑。
+   */
+  fuse?: { deletedCount: number; localCount: number }
 }
 
 /** 同步进度事件（主进程 → 渲染层） */
@@ -275,8 +290,10 @@ export interface SyncHealthReport {
 
 /** 批量下载范围 */
 export interface SyncDownloadScope {
-  type: 'all' | 'category' | 'favorite'
+  type: 'all' | 'category' | 'favorite' | 'ids'
   categoryId?: string
+  /** type === 'ids' 时的图片 ID 列表（画廊批量下载选中项） */
+  ids?: string[]
 }
 
 /** 导入结果统计 */
@@ -300,6 +317,8 @@ export interface LibraryFilter {
   /** 文件大小下/上限（MB），0 为不限 */
   minSizeMB: number
   maxSizeMB: number
+  /** 同步体检深链：仅显示指定 id 集合（来自体检报告），null 为不限 */
+  health: { label: string; ids: string[] } | null
 }
 
 /** 裁剪参数（基于原图像素坐标） */

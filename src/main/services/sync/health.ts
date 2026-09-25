@@ -9,25 +9,24 @@
  */
 import type { SyncHealthReport } from '@shared/types'
 import { getLibrary, markCloudOnly } from '../library'
-import { hashFile } from '../../utils/fs'
+import { hashFilesParallel } from '../workers/hashPool'
 import { isRealFile } from '../paths'
 import { thumbPath } from '../thumbnails'
 import { pruneExpiredTombstones } from '../tombstones'
 import { runPool } from '../../utils/concurrency'
 import { getSyncConfig, hasSecret, loadSecret } from './store'
-import { createClient, fetchManifests } from './client'
+import { getClient } from './client'
 import { isDeletableObjectKey } from './validate'
 
 function configuredClient(): { client: import('minio').Client; bucket: string } | null {
   const cfg = getSyncConfig()
   if (!cfg.endpoint || !cfg.accessKey || !hasSecret()) return null
-  return { client: createClient(cfg, loadSecret()), bucket: cfg.bucket }
+  // A3：单例客户端 —— 与 engine 共享同一连接身份实例
+  return { client: getClient(cfg, loadSecret()), bucket: cfg.bucket }
 }
 
 /** HEAD 检查并发上限（旧实现无上限 Promise.all，大库瞬时打满连接） */
 const HEAD_CHECK_CONCURRENCY = 12
-/** 完整性校验并发上限（sha1 为 CPU/IO 混合负载，保守并发） */
-const VERIFY_CONCURRENCY = 4
 /** 单次孤儿清理上限（防渲染端传入超长数组打爆批处理循环） */
 const CLEANUP_KEY_LIMIT = 10_000
 
@@ -60,7 +59,7 @@ export async function runHealthCheck(): Promise<SyncHealthReport> {
     missingBinaries: [],
     localBroken: [],
     missingThumbs: [],
-    expiredTombstonesCleaned: pruneExpiredTombstones(),
+    expiredTombstonesCleaned: pruneExpiredTombstones()
   }
 
   // H1：并发 HEAD 检查（runPool 限流替代无上限 Promise.all）；
@@ -124,13 +123,15 @@ export async function runHealthCheck(): Promise<SyncHealthReport> {
  */
 export async function cleanupOrphanObjects(keys: string[]): Promise<number> {
   if (!Array.isArray(keys)) throw new Error('参数错误：keys 必须是数组')
-  if (lastOrphanKeys === null) throw new Error('请先运行体检后再清理孤儿对象')
   const made = configuredClient()
   if (!made) throw new Error('尚未配置同步连接')
+  if (lastOrphanKeys === null) throw new Error('请先运行体检后再清理孤儿对象')
 
-  const allowed = [...new Set(keys)].filter(
-    (k): k is string => typeof k === 'string' && isDeletableObjectKey(k) && lastOrphanKeys!.has(k)
-  ).slice(0, CLEANUP_KEY_LIMIT)
+  const allowed = [...new Set(keys)]
+    .filter(
+      (k): k is string => typeof k === 'string' && isDeletableObjectKey(k) && lastOrphanKeys!.has(k)
+    )
+    .slice(0, CLEANUP_KEY_LIMIT)
 
   let cleaned = 0
   for (let i = 0; i < allowed.length; i += 100) {
@@ -177,21 +178,19 @@ export async function verifyIntegrity(
 ): Promise<{ id: string; fileName: string }[]> {
   const data = getLibrary()
   const locals = data.images.filter((i) => i.localFile && isRealFile(i.path))
-  const bad: { id: string; fileName: string }[] = []
-  // 串行改为限流并发（H1）；done 计数驱动进度回调
-  let done = 0
-  await runPool(locals, VERIFY_CONCURRENCY, async (img) => {
-    try {
-      const actual = await hashFile(img.path)
-      if (actual !== img.hash) bad.push({ id: img.id, fileName: img.fileName })
-    } catch {
-      /* 读取失败按断链处理，不属校验范畴 */
-    } finally {
-      done++
-      onProgress?.(done, locals.length)
-    }
-  })
-  return bad
+  if (locals.length === 0) return []
+  // A4：sha1 移入 worker 线程并行计算，主线程只收发消息（大库校验不再卡 UI）。
+  // 读取失败的文件不出现在结果中——按断链处理，不属校验范畴（与旧逐文件 catch 语义一致）
+  const hashes = await hashFilesParallel(
+    locals.map((i) => i.path),
+    { onProgress }
+  )
+  return locals
+    .filter((img) => {
+      const actual = hashes.get(img.path)
+      return actual !== undefined && actual !== img.hash
+    })
+    .map((img) => ({ id: img.id, fileName: img.fileName }))
 }
 
 /** 下载容量预估（scope 内云端图的数量与总字节） */
@@ -203,4 +202,3 @@ export async function estimateDownload(): Promise<{ count: number; sizeBytes: nu
     sizeBytes: cloudOnly.reduce((s, i) => s + i.sizeBytes, 0)
   }
 }
-

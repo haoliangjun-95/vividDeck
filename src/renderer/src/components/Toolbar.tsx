@@ -48,7 +48,12 @@ export function Toolbar(): JSX.Element {
   // 搜索防抖：本地输入即时回显，250ms 后才提交到 store 触发全量过滤
   const [keyword, setKeyword] = useState(filter.keyword)
   const hasCustomFilter =
-    filter.categoryId !== 'all' || filter.tags.length > 0 || filter.minWidth > 0 || filter.minSizeMB > 0 || filter.maxSizeMB > 0 || filter.keyword.trim() !== ''
+    filter.categoryId !== 'all' ||
+    filter.tags.length > 0 ||
+    filter.minWidth > 0 ||
+    filter.minSizeMB > 0 ||
+    filter.maxSizeMB > 0 ||
+    filter.keyword.trim() !== ''
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -81,16 +86,35 @@ export function Toolbar(): JSX.Element {
         {importing ? <Loader2 size={15} className="animate-spin" /> : <FilePlus2 size={15} />}
         导入图片
       </button>
-      <button className="btn-ghost border border-neutral-300 dark:border-neutral-700" disabled={importing} onClick={() => void doImport('folder')}>
+      <button
+        className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+        disabled={importing}
+        onClick={() => void doImport('folder')}
+      >
         <FolderPlus size={15} />
         导入文件夹
       </button>
 
       {/* 当前筛选存为智能相册 */}
       {hasCustomFilter && (
-        <button className="btn-ghost border border-fuchsia-300 !text-fuchsia-600 dark:border-fuchsia-800 dark:!text-fuchsia-400" onClick={() => setSaveAlbumOpen(true)} title="把当前筛选条件保存为智能相册">
+        <button
+          className="btn-ghost border border-fuchsia-300 !text-fuchsia-600 dark:border-fuchsia-800 dark:!text-fuchsia-400"
+          onClick={() => setSaveAlbumOpen(true)}
+          title="把当前筛选条件保存为智能相册"
+        >
           <Sparkles size={15} />
           存为相册
+        </button>
+      )}
+
+      {/* 同步体检深链筛选（来自设置页体检报告，点击清除） */}
+      {filter.health && (
+        <button
+          className="btn-ghost border border-amber-300 !text-amber-600 dark:border-amber-800 dark:!text-amber-400"
+          onClick={() => setFilter({ health: null })}
+          title="点击清除体检筛选，回到全部图片"
+        >
+          体检：{filter.health.label} × {filter.health.ids.length} · 清除
         </button>
       )}
 
@@ -143,7 +167,12 @@ export function Toolbar(): JSX.Element {
         ))}
       </select>
 
-      <select className="field" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} title="排序">
+      <select
+        className="field"
+        value={sort}
+        onChange={(e) => setSort(e.target.value as SortKey)}
+        title="排序"
+      >
         {SORT_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -156,22 +185,28 @@ export function Toolbar(): JSX.Element {
       </span>
 
       {saveAlbumOpen && (
-        <SaveFilterAsAlbum
-          filter={filter}
-          onClose={() => setSaveAlbumOpen(false)}
-        />
+        <SaveFilterAsAlbum filter={filter} onClose={() => setSaveAlbumOpen(false)} />
       )}
     </div>
   )
 }
 
 /** 把当前工具栏/侧栏筛选转成相册规则，打开编辑器（预填规则起点） */
-function SaveFilterAsAlbum({ filter, onClose }: { filter: LibraryFilter; onClose: () => void }): JSX.Element {
+function SaveFilterAsAlbum({
+  filter,
+  onClose
+}: {
+  filter: LibraryFilter
+  onClose: () => void
+}): JSX.Element {
   const rules: import('@shared/types').SmartAlbumRules = {
     ...(filter.tags.length > 0 ? { tagsAny: [...filter.tags] } : {}),
     ...(filter.minWidth > 0 ? { minWidth: filter.minWidth } : {}),
     ...(filter.categoryId === 'favorites' ? { favoriteOnly: true } : {}),
-    ...(filter.categoryId && filter.categoryId !== 'all' && filter.categoryId !== 'favorites' && filter.categoryId !== 'uncategorized'
+    ...(filter.categoryId &&
+    filter.categoryId !== 'all' &&
+    filter.categoryId !== 'favorites' &&
+    filter.categoryId !== 'uncategorized'
       ? { categoryIds: [filter.categoryId] }
       : {})
   }

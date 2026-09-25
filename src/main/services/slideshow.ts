@@ -91,7 +91,10 @@ function intervalMs(config: SlideshowConfig): number {
 /** 依据范围计算素材池（图片 ID，按加入时间排序保证顺序模式稳定） */
 function computePool(config: SlideshowConfig): string[] {
   const data = getLibrary()
-  const album = config.scope.type === 'album' ? (data.albums ?? []).find((a) => a.id === config.scope.albumId) : undefined
+  const album =
+    config.scope.type === 'album'
+      ? (data.albums ?? []).find((a) => a.id === config.scope.albumId)
+      : undefined
   const filtered = data.images.filter((img) => {
     if (config.scope.type === 'favorite') return img.favorite
     if (config.scope.type === 'category') return img.categoryId === config.scope.categoryId
@@ -123,12 +126,18 @@ function broadcast(channel: string, payload?: unknown): void {
  * @param cursorKey 游标键：共享模式 ''；独立模式为 monitorId
  * @param excludeIds 本次 tick 内已被其他显示器使用的图（尽量避开同图重复上墙）
  */
-function nextImageId(pool: string[], config: SlideshowConfig, cursorKey = '', excludeIds = new Set<string>()): string | null {
+function nextImageId(
+  pool: string[],
+  config: SlideshowConfig,
+  cursorKey = '',
+  excludeIds = new Set<string>()
+): string | null {
   if (pool.length === 0) return null
 
   if (config.order === 'sequential') {
     const store = slideshowStore.get()
-    const current = cursorKey === '' ? store.lastIndex : (store.lastIndexByMonitor?.[cursorKey] ?? 0)
+    const current =
+      cursorKey === '' ? store.lastIndex : (store.lastIndexByMonitor?.[cursorKey] ?? 0)
     let index = ((current % pool.length) + pool.length) % pool.length
     // 避开本 tick 已用过的图（池足够大时最多向后探 N 步）
     let steps = 0
@@ -137,7 +146,9 @@ function nextImageId(pool: string[], config: SlideshowConfig, cursorKey = '', ex
       steps++
     }
     const patch: Partial<SlideshowConfig> =
-      cursorKey === '' ? { lastIndex: index + 1 } : { lastIndexByMonitor: { ...store.lastIndexByMonitor, [cursorKey]: index + 1 } }
+      cursorKey === ''
+        ? { lastIndex: index + 1 }
+        : { lastIndexByMonitor: { ...store.lastIndexByMonitor, [cursorKey]: index + 1 } }
     slideshowStore.set(patch)
     return pool[index]
   }
@@ -156,7 +167,10 @@ function nextImageId(pool: string[], config: SlideshowConfig, cursorKey = '', ex
 }
 
 /** 解析某屏的有效轮播参数（override 覆盖全局，缺省继承） */
-function effectiveConfig(config: SlideshowConfig, monitorId: string): SlideshowConfig & { disabled: boolean } {
+function effectiveConfig(
+  config: SlideshowConfig,
+  monitorId: string
+): SlideshowConfig & { disabled: boolean } {
   const o = config.monitorOverrides?.[monitorId] ?? {}
   return {
     ...config,
@@ -229,7 +243,12 @@ async function tickMonitor(monitorId: string, manual = false): Promise<TickOutco
     // 跨屏去重：避开其他屏最近一个周期内已应用的图；
     // 池太小（去重集覆盖整池）时放弃去重保证有图可出，否则随机路径会返回 null
     const excludeIds = buildRecentExcludeIds(monitorId, intervalMs(eff))
-    const imageId = nextImageId(pool, eff, monitorId, excludeIds.size < pool.length ? excludeIds : new Set<string>())
+    const imageId = nextImageId(
+      pool,
+      eff,
+      monitorId,
+      excludeIds.size < pool.length ? excludeIds : new Set<string>()
+    )
     if (!imageId) return 'failed'
     const image = getLibrary().images.find((img) => img.id === imageId)
     if (!image) return 'failed'
@@ -239,7 +258,12 @@ async function tickMonitor(monitorId: string, manual = false): Promise<TickOutco
     }
     const result = await applyWallpaper(filePath, [monitorId], eff.fillMode)
     const entry = recordApply(imageId, result.applied, eff.fillMode)
-    slideshowStore.set({ lastAppliedAtByMonitor: { ...slideshowStore.get().lastAppliedAtByMonitor, [monitorId]: Date.now() } })
+    slideshowStore.set({
+      lastAppliedAtByMonitor: {
+        ...slideshowStore.get().lastAppliedAtByMonitor,
+        [monitorId]: Date.now()
+      }
+    })
     rememberRecentApply(imageId, monitorId)
     broadcast(IPC_EVENTS.SLIDESHOW_TICK, { entry, entries: [entry], manual })
     prefetchNext(pool, eff, monitorId)
@@ -336,7 +360,8 @@ async function tick(manual = false): Promise<void> {
 
     // 解析目标显示器：配置为空 = 全部在线显示器（独立模式需要具体清单逐屏取图）
     const alive = (await listMonitors()).map((m) => m.id)
-    let monitorIds = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
+    const monitorIds =
+      config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
 
     const images = getLibrary().images
     const usedThisTick = new Set<string>()
@@ -369,7 +394,11 @@ async function tick(manual = false): Promise<void> {
 
     if (entries.length > 0) {
       slideshowStore.set({ lastAppliedAt: Date.now() })
-      broadcast(IPC_EVENTS.SLIDESHOW_TICK, { entry: entries[entries.length - 1].entry, entries, manual })
+      broadcast(IPC_EVENTS.SLIDESHOW_TICK, {
+        entry: entries[entries.length - 1].entry,
+        entries,
+        manual
+      })
     }
   } catch (err) {
     console.error('[slideshow] 切换失败:', err)
@@ -410,13 +439,18 @@ function schedule(delayMs?: number): void {
     void listMonitors()
       .then((mons) => {
         const alive = mons.map((m) => m.id)
-        const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
+        const targets =
+          config.monitorIds.length > 0
+            ? config.monitorIds.filter((id) => alive.includes(id))
+            : alive
         // 至少两屏才有独立意义；单屏退回共享路径
         if (targets.length > 1) {
           // 错峰：按屏索引把首次切换平移 周期/屏数 的份额，
           // 避免所有屏同一时刻触发（N 个原生子进程 + N 次 sharp 预渲染并发）
           targets.forEach((m, i) => {
-            const stagger = Math.round((i * intervalMs(effectiveConfig(config, m))) / targets.length)
+            const stagger = Math.round(
+              (i * intervalMs(effectiveConfig(config, m))) / targets.length
+            )
             scheduleMonitor(m, delayMs, stagger)
           })
         } else {
@@ -447,7 +481,8 @@ export async function nextSlideshowNow(): Promise<void> {
   if (config.independentMonitors) {
     const mons = await listMonitors().catch(() => [] as { id: string }[])
     const alive = mons.map((m) => m.id)
-    const targets = config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
+    const targets =
+      config.monitorIds.length > 0 ? config.monitorIds.filter((id) => alive.includes(id)) : alive
     if (targets.length > 1) {
       // 并行切换各屏（游标彼此独立、store 按屏原子写入，且 tickMonitor 内部已捕获异常不会 reject），
       // 避免逐屏串行等待各自的下载 + 预渲染

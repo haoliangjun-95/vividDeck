@@ -70,5 +70,8 @@ bubble.addEventListener('contextmenu', (e) => {
 
 // 拖动时改变光标
 bubble.addEventListener('mouseenter', () => (bubble.style.cursor = 'grab'))
-bubble.addEventListener('mousedown', () => (bubble.style.cursor = dragging ? 'grabbing' : 'pointer'))
+bubble.addEventListener(
+  'mousedown',
+  () => (bubble.style.cursor = dragging ? 'grabbing' : 'pointer')
+)
 window.addEventListener('mouseup', () => (bubble.style.cursor = 'grab'))

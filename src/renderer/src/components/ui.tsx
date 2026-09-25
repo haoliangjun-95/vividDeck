@@ -25,7 +25,10 @@ export function Modal({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      onMouseDown={onClose}
+    >
       <div
         className={`card w-full ${width} max-h-[88vh] overflow-hidden flex flex-col`}
         onMouseDown={(e) => e.stopPropagation()}
@@ -88,7 +91,11 @@ export function ToastHost(): JSX.Element {
         <div
           key={t.id}
           className={`pointer-events-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm text-white shadow-lg ${
-            t.type === 'error' ? 'bg-red-600' : t.type === 'info' ? 'bg-neutral-700' : 'bg-emerald-600'
+            t.type === 'error'
+              ? 'bg-red-600'
+              : t.type === 'info'
+                ? 'bg-neutral-700'
+                : 'bg-emerald-600'
           }`}
         >
           <span>{t.message}</span>

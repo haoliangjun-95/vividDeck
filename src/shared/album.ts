@@ -2,7 +2,7 @@
  * 智能相册匹配谓词（主进程轮播池与渲染层画廊共用，保证两处口径一致）
  * 规则内全部条件 AND 叠加；缺省项不参与过滤。
  */
-import type { ImageItem, SmartAlbum } from './types'
+import type { SmartAlbum } from './types'
 
 interface MatchableImage {
   width: number
@@ -15,9 +15,16 @@ interface MatchableImage {
 export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
   const r = album.rules
   if (r.favoriteOnly && !img.favorite) return false
-  if (r.tagsAll && r.tagsAll.length > 0 && !r.tagsAll.every((t) => img.tags.includes(t))) return false
-  if (r.tagsAny && r.tagsAny.length > 0 && !r.tagsAny.some((t) => img.tags.includes(t))) return false
-  if (r.categoryIds && r.categoryIds.length > 0 && !(img.categoryId && r.categoryIds.includes(img.categoryId))) return false
+  if (r.tagsAll && r.tagsAll.length > 0 && !r.tagsAll.every((t) => img.tags.includes(t)))
+    return false
+  if (r.tagsAny && r.tagsAny.length > 0 && !r.tagsAny.some((t) => img.tags.includes(t)))
+    return false
+  if (
+    r.categoryIds &&
+    r.categoryIds.length > 0 &&
+    !(img.categoryId && r.categoryIds.includes(img.categoryId))
+  )
+    return false
   if (r.minWidth && img.width < r.minWidth) return false
   if (r.orientation) {
     const landscape = img.width >= img.height

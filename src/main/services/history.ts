@@ -3,7 +3,6 @@
  * 上限 500 条，超出淘汰最旧记录。全部本地持久化。
  */
 import type { FillMode, HistoryItem } from '@shared/types'
-import { IPC_EVENTS } from '@shared/ipc'
 import { JsonStore } from './store'
 import { genId } from '../utils/fs'
 import { notifyWallpaperChanged } from '../bubble'
@@ -17,7 +16,11 @@ export function listHistory(): HistoryItem[] {
 }
 
 /** 写入一条历史（最新的在最前）；同时通知悬浮球刷新当前壁纸缩略图 */
-export function recordApply(imageId: string, monitorIds: string[], fillMode: FillMode): HistoryItem {
+export function recordApply(
+  imageId: string,
+  monitorIds: string[],
+  fillMode: FillMode
+): HistoryItem {
   const entry: HistoryItem = {
     id: genId(),
     imageId,

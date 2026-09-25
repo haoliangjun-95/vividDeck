@@ -44,7 +44,10 @@ const COMBOS = [
   { label: 'A-base', opts: {} }, // 当前 bubble.ts 的完整选项
   { label: 'B-no-bgcolor', opts: { backgroundColor: undefined } },
   { label: 'C-focusable', opts: { focusable: true } },
-  { label: 'D-minimal', opts: { backgroundColor: undefined, focusable: true, hasShadow: undefined, movable: true } }
+  {
+    label: 'D-minimal',
+    opts: { backgroundColor: undefined, focusable: true, hasShadow: undefined, movable: true }
+  }
 ]
 
 const BASE = {

@@ -1,0 +1,2 @@
+# 批次2 #13：typecheck → build（清单推荐顺序的后两级）
+npm run typecheck && npm run build

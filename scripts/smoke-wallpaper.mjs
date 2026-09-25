@@ -25,7 +25,9 @@ async function main() {
   })
     .composite([
       {
-        input: Buffer.from(`<svg width="1600" height="400"><text x="800" y="220" font-size="120" text-anchor="middle" fill="#fff" font-family="sans-serif">vividDeck SMOKE</text></svg>`),
+        input: Buffer.from(
+          `<svg width="1600" height="400"><text x="800" y="220" font-size="120" text-anchor="middle" fill="#fff" font-family="sans-serif">vividDeck SMOKE</text></svg>`
+        ),
         top: 0,
         left: 0
       }
@@ -36,14 +38,19 @@ async function main() {
 
   // 3. 预渲染（fit 模式：contain + 黑边扩展，复刻 prerender.ts 逻辑）
   const rendered = path.join(os.tmpdir(), 'vd-smoke-rendered.jpg')
-  const meta = await sharp(tmp).resize(W, H, { fit: 'contain', background: '#000000' }).toBuffer({ resolveWithObject: true })
-  await sharp(meta.data).extend({
-    top: Math.floor((H - meta.info.height) / 2),
-    bottom: H - meta.info.height - Math.floor((H - meta.info.height) / 2),
-    left: Math.floor((W - meta.info.width) / 2),
-    right: W - meta.info.width - Math.floor((W - meta.info.width) / 2),
-    background: '#000000'
-  }).jpeg({ quality: 95 }).toFile(rendered)
+  const meta = await sharp(tmp)
+    .resize(W, H, { fit: 'contain', background: '#000000' })
+    .toBuffer({ resolveWithObject: true })
+  await sharp(meta.data)
+    .extend({
+      top: Math.floor((H - meta.info.height) / 2),
+      bottom: H - meta.info.height - Math.floor((H - meta.info.height) / 2),
+      left: Math.floor((W - meta.info.width) / 2),
+      right: W - meta.info.width - Math.floor((W - meta.info.width) / 2),
+      background: '#000000'
+    })
+    .jpeg({ quality: 95 })
+    .toFile(rendered)
   const outMeta = await sharp(rendered).metadata()
   console.log(`✓ 预渲染输出: ${outMeta.width}x${outMeta.height}（期望 ${W}x${H}）`)
 

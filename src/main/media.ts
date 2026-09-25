@@ -22,7 +22,10 @@ function syncReady(): boolean {
  * 解析 media:// 请求对应的本地文件路径（必要时生成/下载缓存）
  * @returns 文件绝对路径；图片不存在或生成失败返回 null（→ 404）
  */
-export async function resolveMediaPath(kind: 'thumb' | 'preview' | 'original', imageId: string): Promise<string | null> {
+export async function resolveMediaPath(
+  kind: 'thumb' | 'preview' | 'original',
+  imageId: string
+): Promise<string | null> {
   const image = getLibrary().images.find((img) => img.id === imageId)
   if (!image) return null
   try {
@@ -32,9 +35,14 @@ export async function resolveMediaPath(kind: 'thumb' | 'preview' | 'original', i
       // 本地无缩略图且文件在云端：尝试从远端拉缩略图（小文件，画廊秒开）
       if (!image.localFile && syncReady()) {
         const { loadSecret } = await import('./services/sync/store')
-        const { createClient, downloadFile } = await import('./services/sync/client')
+        const { getClient, downloadFile } = await import('./services/sync/client')
         const cfg = getSyncConfig()
-        await downloadFile(createClient(cfg, loadSecret()), cfg.bucket, `thumbs/${path.basename(local)}`, local)
+        await downloadFile(
+          getClient(cfg, loadSecret()),
+          cfg.bucket,
+          `thumbs/${path.basename(local)}`,
+          local
+        )
         return local
       }
       return (await ensureThumb(image)) || local

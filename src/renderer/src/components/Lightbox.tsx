@@ -2,10 +2,22 @@
  * 灯箱：大图预览（滚轮缩放、拖拽平移、左右切换）、信息面板、快捷操作
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Crop, Heart, Info, Monitor, Pencil, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Crop,
+  Heart,
+  Info,
+  Monitor,
+  Pencil,
+  Trash2,
+  X,
+  ZoomIn,
+  ZoomOut
+} from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
-import { formatBytes, formatLabel, formatResolution, formatTime, mediaUrl } from '../lib/utils'
+import { formatBytes, formatLabel, formatResolution, formatTime } from '../lib/utils'
 
 /** 灯箱主体 */
 function Viewer({ imageId, onNav }: { imageId: string; onNav: (delta: number) => void }) {
@@ -86,10 +98,18 @@ function Viewer({ imageId, onNav }: { imageId: string; onNav: (delta: number) =>
       )}
 
       {/* 左右切换 */}
-      <button className="btn absolute left-3 top-1/2 -translate-y-1/2 !rounded-full !bg-black/40 !p-2.5 !text-white hover:!bg-black/60" onClick={() => onNav(-1)} aria-label="上一张">
+      <button
+        className="btn absolute left-3 top-1/2 -translate-y-1/2 !rounded-full !bg-black/40 !p-2.5 !text-white hover:!bg-black/60"
+        onClick={() => onNav(-1)}
+        aria-label="上一张"
+      >
         <ChevronLeft size={20} />
       </button>
-      <button className="btn absolute right-3 top-1/2 -translate-y-1/2 !rounded-full !bg-black/40 !p-2.5 !text-white hover:!bg-black/60" onClick={() => onNav(1)} aria-label="下一张">
+      <button
+        className="btn absolute right-3 top-1/2 -translate-y-1/2 !rounded-full !bg-black/40 !p-2.5 !text-white hover:!bg-black/60"
+        onClick={() => onNav(1)}
+        aria-label="下一张"
+      >
         <ChevronRight size={20} />
       </button>
 
@@ -145,7 +165,12 @@ function InfoPanel({ imageId }: { imageId: string }) {
           ['分辨率', formatResolution(image)],
           ['文件大小', formatBytes(image.sizeBytes)],
           ['格式', formatLabel(image.format)],
-          ['分类', image.categoryId ? (categories.find((c) => c.id === image.categoryId)?.name ?? '—') : '未分类'],
+          [
+            '分类',
+            image.categoryId
+              ? (categories.find((c) => c.id === image.categoryId)?.name ?? '—')
+              : '未分类'
+          ],
           ['原始路径', image.sourcePath]
         ].map(([k, v]) => (
           <div key={k} className="flex gap-2">
@@ -165,7 +190,12 @@ function InfoPanel({ imageId }: { imageId: string }) {
               key={tag}
               className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700 hover:line-through dark:bg-indigo-950 dark:text-indigo-300"
               title="点击移除"
-              onClick={() => void setTags(imageId, image.tags.filter((t) => t !== tag))}
+              onClick={() =>
+                void setTags(
+                  imageId,
+                  image.tags.filter((t) => t !== tag)
+                )
+              }
             >
               {tag}
             </button>
@@ -220,7 +250,7 @@ export function Lightbox(): JSX.Element | null {
   const [renaming, setRenaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
 
-  const image = (allImages.find((img) => img.id === imageId) ?? null)
+  const image = allImages.find((img) => img.id === imageId) ?? null
 
   const nav = useCallback(
     (delta: number) => {
@@ -261,7 +291,9 @@ export function Lightbox(): JSX.Element | null {
       <div className="flex items-center gap-1 px-3 py-2 text-white">
         <span className="mr-2 max-w-[40%] truncate text-sm text-white/70">{image.fileName}</span>
         {!image.localFile && (
-          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white/80">云端 · 打开时自动下载</span>
+          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white/80">
+            云端 · 打开时自动下载
+          </span>
         )}
         <button
           className={`btn !p-2 ${image.favorite ? '!text-amber-400' : '!text-white/80'}`}
@@ -270,10 +302,18 @@ export function Lightbox(): JSX.Element | null {
         >
           <Heart size={17} fill={image.favorite ? 'currentColor' : 'none'} />
         </button>
-        <button className="btn !p-2 !text-white/80 hover:!bg-white/15" title="设为壁纸" onClick={() => openWallpaperDialog(image.id)}>
+        <button
+          className="btn !p-2 !text-white/80 hover:!bg-white/15"
+          title="设为壁纸"
+          onClick={() => openWallpaperDialog(image.id)}
+        >
           <Monitor size={17} />
         </button>
-        <button className="btn !p-2 !text-white/80 hover:!bg-white/15" title="裁剪" onClick={() => openCrop(image.id)}>
+        <button
+          className="btn !p-2 !text-white/80 hover:!bg-white/15"
+          title="裁剪"
+          onClick={() => openCrop(image.id)}
+        >
           <Crop size={17} />
         </button>
         <button
@@ -316,7 +356,11 @@ export function Lightbox(): JSX.Element | null {
           >
             <Info size={17} />
           </button>
-          <button className="btn !p-2 !text-white/80 hover:!bg-white/15" title="关闭" onClick={close}>
+          <button
+            className="btn !p-2 !text-white/80 hover:!bg-white/15"
+            title="关闭"
+            onClick={close}
+          >
             <X size={18} />
           </button>
         </div>
