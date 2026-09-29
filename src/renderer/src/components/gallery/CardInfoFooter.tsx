@@ -13,7 +13,9 @@ export const CardInfoFooter = React.memo(function CardInfoFooter({ image }: { im
   const moreTags = image.tags.length - visibleTags.length
 
   return (
-    <div className="flex min-h-[34px] flex-wrap items-center gap-1 px-2 py-1.5">
+    // 严格单行：virtualGrid 的 CARD_FOOTER=34px 行高假设依赖此约束，
+    // 多余 chip 裁剪显示而非折行——折行会导致行高漂移、滚动位置随深度累积偏移
+    <div className="flex min-h-[34px] flex-nowrap items-center gap-1 overflow-hidden px-2 py-1.5">
       {category ? (
         <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300">
           <FolderOpen size={11} className="shrink-0" />

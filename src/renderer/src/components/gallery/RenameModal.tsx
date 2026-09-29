@@ -9,6 +9,22 @@ export function RenameModal({ image, onClose }: { image: ImageItem; onClose: () 
   const rename = useLibraryStore((s) => s.rename)
   const toast = useUIStore((s) => s.toast)
   const [name, setName] = useState(image.fileName)
+  const [busy, setBusy] = useState(false)
+
+  // 成功才提示并关弹窗；失败留在弹窗内提示错误（旧实现先报成功，重名/非法名假成功）
+  const doRename = async (): Promise<void> => {
+    if (busy || !name.trim()) return
+    setBusy(true)
+    try {
+      await rename(image.id, name.trim())
+      toast('已重命名')
+      onClose()
+    } catch (err) {
+      toast(`重命名失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <Modal title="重命名" onClose={onClose} width="max-w-md">
       <div className="space-y-3">
@@ -18,11 +34,7 @@ export function RenameModal({ image, onClose }: { image: ImageItem; onClose: () 
           autoFocus
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && name.trim()) {
-              void rename(image.id, name.trim())
-              toast('已重命名')
-              onClose()
-            }
+            if (e.key === 'Enter' && name.trim()) void doRename()
           }}
         />
         <div className="flex justify-end gap-2">
@@ -31,12 +43,8 @@ export function RenameModal({ image, onClose }: { image: ImageItem; onClose: () 
           </button>
           <button
             className="btn-primary"
-            disabled={!name.trim()}
-            onClick={() => {
-              void rename(image.id, name.trim())
-              toast('已重命名')
-              onClose()
-            }}
+            disabled={!name.trim() || busy}
+            onClick={() => void doRename()}
           >
             保存
           </button>

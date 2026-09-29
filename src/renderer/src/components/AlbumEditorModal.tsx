@@ -295,11 +295,18 @@ export function AlbumEditorModal({
                 className="btn-danger"
                 onClick={() => {
                   if (!confirm(`删除智能相册「${editing.name}」？（不影响图片本身）`)) return
-                  void deleteAlbum(editing.id).then(() => {
-                    setFilter({ albumId: null })
-                    toast('相册已删除', 'info')
-                    onClose()
-                  })
+                  void deleteAlbum(editing.id)
+                    .then(() => {
+                      setFilter({ albumId: null })
+                      toast('相册已删除', 'info')
+                      onClose()
+                    })
+                    .catch((err: unknown) =>
+                      toast(
+                        `删除失败：${err instanceof Error ? err.message : String(err)}`,
+                        'error'
+                      )
+                    )
                 }}
               >
                 <Trash2 size={14} />

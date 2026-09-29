@@ -13,7 +13,7 @@ import type {
   SmartAlbumRules
 } from '@shared/types'
 import { matchAlbum } from '@shared/album'
-import { sanitizeFilter, sanitizeSort } from '../lib/prefs'
+import { reconcileFilter, sanitizeFilter, sanitizeSort } from '../lib/prefs'
 
 export type SortKey =
   'added-desc' | 'added-asc' | 'taken-desc' | 'taken-asc' | 'name-asc' | 'size-desc'
@@ -85,6 +85,9 @@ export const useLibraryStore = create<LibraryState>()(
       load: async () => {
         const data = await window.api.getLibrary()
         get().applyData(data)
+        // 持久化筛选可能指向其他设备已删除的分类/相册/标签（空画廊假象）——存在性降级
+        const r = reconcileFilter(get().filter, data.categories, data.albums ?? [], data.tags)
+        if (r.changed) set({ filter: r.filter })
         set({ loaded: true })
       },
 

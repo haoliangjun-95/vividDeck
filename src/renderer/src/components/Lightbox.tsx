@@ -18,6 +18,7 @@ import {
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 import { formatBytes, formatLabel, formatResolution, formatTime } from '../lib/utils'
+import { DeleteConfirmModal } from './gallery/DeleteConfirmModal'
 
 /** 灯箱主体 */
 function Viewer({ imageId, onNav }: { imageId: string; onNav: (delta: number) => void }) {
@@ -243,12 +244,11 @@ export function Lightbox(): JSX.Element | null {
   const openCrop = useUIStore((s) => s.openCrop)
   const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const rename = useLibraryStore((s) => s.rename)
-  const remove = useLibraryStore((s) => s.remove)
   const images = useLibraryStore(selectFilteredImages)
   const allImages = useLibraryStore((s) => s.images)
-  const toast = useUIStore((s) => s.toast)
   const [showInfo, setShowInfo] = useState(true)
   const [renaming, setRenaming] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
 
   const image = allImages.find((img) => img.id === imageId) ?? null
@@ -329,17 +329,22 @@ export function Lightbox(): JSX.Element | null {
         </button>
         <button
           className="btn !p-2 !text-white/80 hover:!bg-red-500/60"
-          title="删除（移入废纸篓）"
-          onClick={() => {
-            if (confirm(`确定删除「${image.fileName}」吗？（复制入库的文件将移入系统废纸篓）`)) {
-              void remove(image.id)
-              close()
-              toast('已删除')
-            }
-          }}
+          title="删除（可撤销 / 仅清本地副本）"
+          onClick={() => setDeleteOpen(true)}
         >
           <Trash2 size={17} />
         </button>
+
+        {deleteOpen && (
+          <DeleteConfirmModal
+            ids={[image.id]}
+            onClose={() => {
+              setDeleteOpen(false)
+              // 删除成功（记录已不在库中）则关闭灯箱；取消则保持浏览
+              if (!useLibraryStore.getState().images.some((i) => i.id === image.id)) close()
+            }}
+          />
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <button

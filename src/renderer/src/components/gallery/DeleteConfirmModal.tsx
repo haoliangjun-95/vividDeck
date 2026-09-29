@@ -8,6 +8,7 @@ export function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: (
   const toast = useUIStore((st) => st.toast)
   const pushUndo = useUIStore((st) => st.pushUndo)
   const clearSelection = useUIStore((st) => st.clearSelection)
+  const selectedIds = useUIStore((st) => st.selectedIds)
   const [busy, setBusy] = useState(false)
 
   const doDelete = async (mode: 'all' | 'local'): Promise<void> => {
@@ -42,7 +43,8 @@ export function DeleteConfirmModal({ ids, onClose }: { ids: string[]; onClose: (
             }
           : undefined
       )
-      clearSelection()
+      // 仅当删除集与当前多选有交集时才清空（单图删除不应清掉用户的多选）
+      if (ids.some((id) => selectedIds.includes(id))) clearSelection()
       onClose()
       void useLibraryStore.getState().load()
     } catch (err) {

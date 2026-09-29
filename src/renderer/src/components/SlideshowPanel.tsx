@@ -12,6 +12,7 @@ import type {
   SlideshowConfig,
   SlideshowOrder,
   SlideshowScope,
+  SmartAlbum,
   TimeScope
 } from '@shared/types'
 import { matchAlbum } from '@shared/album'
@@ -90,23 +91,7 @@ export function SlideshowPanel(): JSX.Element {
   }
 
   // 池大小：全部/收藏用派生计数；分类/相册按范围实际过滤（相册复用 matchAlbum，与侧栏口径一致）
-  const poolSize = ((): number | undefined => {
-    const sc = config.scope
-    switch (sc.type) {
-      case 'all':
-        return totalCount
-      case 'favorite':
-        return favoriteCount
-      case 'category':
-        return images.filter((img) => img.categoryId === sc.categoryId).length
-      case 'album': {
-        const album = albums.find((a) => a.id === sc.albumId)
-        return album ? images.filter((img) => matchAlbum(img, album)).length : 0
-      }
-      default:
-        return undefined
-    }
-  })()
+  const poolSize = poolSizeOfScope(config.scope, { images, albums, totalCount, favoriteCount })
 
   const unitOptions: { value: IntervalUnit; label: string }[] = [
     { value: 'minute', label: '分钟' },
@@ -367,6 +352,32 @@ export function SlideshowPanel(): JSX.Element {
 }
 
 /** 单屏轮播卡片：当前壁纸 + 下次切换倒计时 + 自定义此屏（范围/周期/填充/开关） */
+/** 范围 → 素材池大小（全局与每屏卡片共用同一口径；相册复用 matchAlbum） */
+function poolSizeOfScope(
+  sc: SlideshowScope,
+  ctx: {
+    images: Parameters<typeof matchAlbum>[0][]
+    albums: SmartAlbum[]
+    totalCount: number
+    favoriteCount: number
+  }
+): number | undefined {
+  switch (sc.type) {
+    case 'all':
+      return ctx.totalCount
+    case 'favorite':
+      return ctx.favoriteCount
+    case 'category':
+      return ctx.images.filter((img) => img.categoryId === sc.categoryId).length
+    case 'album': {
+      const album = ctx.albums.find((a) => a.id === sc.albumId)
+      return album ? ctx.images.filter((img) => matchAlbum(img, album)).length : 0
+    }
+    default:
+      return undefined
+  }
+}
+
 function MonitorCard({
   monitor,
   config,
@@ -462,6 +473,20 @@ function MonitorCard({
           <div className="text-xs text-neutral-400">
             {disabled ? '已暂停' : config.enabled ? fmtRemain(remainMs) : '轮播未开启'} ·{' '}
             {scopeLabel(eff.scope as SlideshowScope)}
+            {((): JSX.Element | null => {
+              const n = poolSizeOfScope(eff.scope as SlideshowScope, {
+                images,
+                albums,
+                totalCount: images.length,
+                favoriteCount: images.filter((img) => img.favorite).length
+              })
+              if (n === undefined) return null
+              return n > 0 ? (
+                <span className="text-neutral-400">（{n} 张）</span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">（该范围没有可用图片）</span>
+              )
+            })()}
           </div>
         </div>
         <label

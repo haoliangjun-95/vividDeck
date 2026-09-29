@@ -11,8 +11,10 @@ import { appliedDir, dirSize, previewDir, thumbDir } from './paths'
 import { previewPath, thumbPath } from './thumbnails'
 import { getLibrary } from './library'
 
-/** 缩略图/预览命名：`<id: 小写字母数字>_<sha1 前 8 位>.<webp|jpg>`（见 thumbnails.ts） */
-const CACHE_NAME_PATTERN = /^[0-9a-z]+_[0-9a-f]{8}\.(webp|jpg)$/
+/** 缩略图/预览命名：`<id>_<sha1 前 8 位>.<webp|jpg>`。id 段字符集与
+ *  sanitizeIdSegment（utils/fs.ts）保持一致：本地 genId 产出 ^[0-9a-z]+$，
+ *  云端记录净化后可含大写/连字符——白名单过窄会让这些文件的孤儿缓存永远清不到 */
+const CACHE_NAME_PATTERN = /^[0-9A-Za-z-]{1,64}_[0-9a-f]{8}\.(webp|jpg)$/
 
 /** 预渲染缓存命名：`<sha1 前 16 位>.jpg`（见 wallpaper/prerender.ts，纯派生可整体再生） */
 const APPLIED_NAME_PATTERN = /^[0-9a-f]{16}\.jpg$/

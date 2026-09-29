@@ -9,7 +9,20 @@
  */
 import { app, BrowserWindow, dialog } from 'electron'
 import log from 'electron-log/main'
-import { getSyncConfig } from './sync/store'
+
+/**
+ * sync/store 的惰性模块引用（脱敏用的 endpoint/accessKey 精确替换）：
+ * 不能静态 import——它经 store→paths 的模块级磁盘 I/O 会先于 initLogger 求值，
+ * 破坏"logger 最先初始化"的启动顺序。首次加载成功前退化为纯正则脱敏。
+ */
+let syncStoreRef: typeof import('./sync/store') | null = null
+function warmSyncStoreRef(): void {
+  void import('./sync/store')
+    .then((m) => {
+      syncStoreRef = m
+    })
+    .catch(() => undefined)
+}
 
 /** 敏感字段名（对象中出现这些 key 时值整体替换为 ***） */
 const SENSITIVE_KEYS = new Set([
@@ -36,11 +49,13 @@ function redactText(text: string): string {
     )
     // URL 中的 user:pass@
     .replace(/\/\/([^/\s:@]+):([^@\s]+)@/g, '//$1:***@')
-  // 已配置的 endpoint / accessKey 按精确串替换（懒读取，失败不影响日志本身）
+  // 已配置的 endpoint / accessKey 按精确串替换（模块引用未就绪时跳过，不影响日志本身）
   try {
-    const cfg = getSyncConfig()
-    if (cfg.accessKey) out = out.split(cfg.accessKey).join('***')
-    if (cfg.endpoint) out = out.split(cfg.endpoint).join('<endpoint>')
+    if (syncStoreRef) {
+      const cfg = syncStoreRef.getSyncConfig()
+      if (cfg.accessKey) out = out.split(cfg.accessKey).join('***')
+      if (cfg.endpoint) out = out.split(cfg.endpoint).join('<endpoint>')
+    }
   } catch {
     /* 配置尚未就绪时跳过精确替换 */
   }
@@ -107,6 +122,7 @@ export function initLogger(): void {
     `[logger] vividDeck v${app.getVersion()} 启动，electron ${process.versions.electron}，` +
       `平台 ${process.platform}，日志：${logFilePath()}`
   )
+  warmSyncStoreRef()
 }
 
 /** 渲染进程崩溃计数（防止崩溃循环时无限重载） */
@@ -156,6 +172,16 @@ export function installCrashHandlers(): void {
         `渲染进程已连续崩溃 ${count} 次，已停止自动恢复。\n日志位置：\n${logFilePath()}`
       )
     }
+  })
+
+  // 渲染层 console.error 转发落盘（ErrorBoundary 的 componentDidCatch 只走渲染层
+  // console，此前组件栈错误永远进不了 main.log，崩溃兜底却引导用户发该文件）
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('console-message', (_e, level, message, line, sourceId) => {
+      if (level >= 3) {
+        log.error(`[renderer] ${message} (${sourceId}:${line})`)
+      }
+    })
   })
 
   app.on('child-process-gone', (_event, details) => {

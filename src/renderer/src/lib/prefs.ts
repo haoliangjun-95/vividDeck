@@ -8,8 +8,15 @@ import type { LibraryFilter } from '@shared/types'
 import type { SortKey } from '../store/library'
 import type { DrawerKey } from '../store/ui'
 
-/** 合法排序键，与 store/library.ts 的 SortKey 联合保持一致 */
-const SORT_KEYS: readonly string[] = ['added-desc', 'added-asc', 'name-asc', 'size-desc']
+/** 合法排序键，与 store/library.ts 的 SortKey 联合保持一致（含批次3 的拍摄时间排序） */
+const SORT_KEYS: readonly string[] = [
+  'added-desc',
+  'added-asc',
+  'taken-desc',
+  'taken-asc',
+  'name-asc',
+  'size-desc'
+]
 /** 合法抽屉键，与 store/ui.ts 的 DrawerKey 联合保持一致（null = 关闭，不在列） */
 const DRAWER_KEYS: readonly string[] = ['slideshow', 'history', 'settings']
 
@@ -50,4 +57,44 @@ export function sanitizeFilter(value: unknown, fallback: LibraryFilter): Library
 /** 有限且非负的数值才可信，否则回落 fallback */
 function pickNonNegativeNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/**
+ * 持久化筛选引用实体的存在性校验（跨设备删除降级）：
+ * 筛选可能指向另一设备已删除的分类/相册/标签——启动后命中不了任何图，
+ * 表现为"空画廊 + 侧栏无高亮"的数据丢失假象。失效引用分别降级为
+ * 全部分类 / 无相册 / 剔除标签。无变化时返回原引用（避免无谓重渲染）。
+ */
+export function reconcileFilter(
+  filter: LibraryFilter,
+  categories: readonly { id: string }[],
+  albums: readonly { id: string }[],
+  tags: readonly string[]
+): { filter: LibraryFilter; changed: boolean } {
+  const SPECIAL_CATEGORIES = new Set(['all', 'favorites', 'uncategorized'])
+  let changed = false
+  let categoryId = filter.categoryId
+  let albumId = filter.albumId
+  let filterTags = filter.tags
+
+  if (
+    typeof categoryId === 'string' &&
+    !SPECIAL_CATEGORIES.has(categoryId) &&
+    !categories.some((c) => c.id === categoryId)
+  ) {
+    categoryId = 'all'
+    changed = true
+  }
+  if (albumId !== null && !albums.some((a) => a.id === albumId)) {
+    albumId = null
+    changed = true
+  }
+  if (filterTags.some((t) => !tags.includes(t))) {
+    filterTags = filterTags.filter((t) => tags.includes(t))
+    changed = true
+  }
+  return {
+    filter: changed ? { ...filter, categoryId, albumId, tags: filterTags } : filter,
+    changed
+  }
 }

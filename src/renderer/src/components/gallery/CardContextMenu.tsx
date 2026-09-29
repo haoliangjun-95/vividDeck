@@ -150,10 +150,18 @@ export function CardContextMenu({
           className={item}
           onClick={() => {
             if (batchIds) {
-              void window.api.updateImages(batchIds, { favorite: !image.favorite }).then((data) => {
-                useLibraryStore.getState().applyData(data)
-              })
-              toast(`已${image.favorite ? '取消收藏' : '收藏'} ${N} 张`, 'info')
+              void window.api
+                .updateImages(batchIds, { favorite: !image.favorite })
+                .then((data) => {
+                  useLibraryStore.getState().applyData(data)
+                  toast(`已${image.favorite ? '取消收藏' : '收藏'} ${N} 张`, 'info')
+                })
+                .catch((err: unknown) =>
+                  toast(
+                    `${image.favorite ? '取消收藏' : '收藏'}失败：${err instanceof Error ? err.message : String(err)}`,
+                    'error'
+                  )
+                )
             } else {
               void toggleFavorite(image.id)
             }

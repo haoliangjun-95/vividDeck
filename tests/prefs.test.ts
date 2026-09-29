@@ -4,7 +4,7 @@
  * 做类型校验与兜底（跨版本缺字段、手动篡改、体检深链瞬态剥离）。
  */
 import { describe, expect, it } from 'vitest'
-import { sanitizeDrawer, sanitizeFilter, sanitizeSort } from '@renderer/lib/prefs'
+import { reconcileFilter, sanitizeDrawer, sanitizeFilter, sanitizeSort } from '@renderer/lib/prefs'
 import type { LibraryFilter } from '@shared/types'
 
 const FALLBACK: LibraryFilter = {
@@ -86,5 +86,47 @@ describe('sanitizeDrawer 抽屉键校验', () => {
     expect(sanitizeDrawer(undefined)).toBeNull()
     expect(sanitizeDrawer('bogus')).toBeNull()
     expect(sanitizeDrawer(123)).toBeNull()
+  })
+})
+
+describe('reconcileFilter（跨设备删除降级）', () => {
+  const base: LibraryFilter = {
+    keyword: '',
+    categoryId: 'all',
+    tags: [],
+    albumId: null,
+    minWidth: 0,
+    minSizeMB: 0,
+    maxSizeMB: 0,
+    health: null
+  }
+  const cats = [{ id: 'c1' }, { id: 'c2' }]
+  const albums = [{ id: 'a1' }]
+  const tags = ['旅行', '城市']
+
+  it('全部有效时返回原引用且 changed=false', () => {
+    const f = { ...base, categoryId: 'c1', albumId: 'a1', tags: ['旅行'] }
+    const r = reconcileFilter(f, cats, albums, tags)
+    expect(r.changed).toBe(false)
+    expect(r.filter).toBe(f)
+  })
+
+  it('特殊分类值（all/favorites/uncategorized）不校验存在性', () => {
+    for (const c of ['all', 'favorites', 'uncategorized'] as const) {
+      expect(reconcileFilter({ ...base, categoryId: c }, cats, albums, tags).changed).toBe(false)
+    }
+  })
+
+  it('已删分类 → all；已删相册 → null；已删标签剔除；混合场景全降级', () => {
+    const r = reconcileFilter(
+      { ...base, categoryId: 'gone', albumId: 'gone-album', tags: ['旅行', 'gone'] },
+      cats,
+      albums,
+      tags
+    )
+    expect(r.changed).toBe(true)
+    expect(r.filter.categoryId).toBe('all')
+    expect(r.filter.albumId).toBeNull()
+    expect(r.filter.tags).toEqual(['旅行'])
   })
 })

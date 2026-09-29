@@ -23,12 +23,23 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    // 渲染层 console 可在 DevTools 查看；主进程日志见 electron-log 落盘文件
+    // 经主进程 console-message 转发（logger.ts）写入 electron-log 落盘文件
     console.error(`[ErrorBoundary] ${this.props.section ?? '全局'}`, error, info.componentStack)
   }
 
   private readonly reload = (): void => {
     window.location.reload()
+  }
+
+  /** 逃生口：若崩溃由持久化的坏偏好引发（如指向已删实体的筛选触发渲染错误），
+   *  reload 会原样恢复同一份 localStorage 再次崩溃——先清偏好再重载 */
+  private readonly resetPrefsAndReload = (): void => {
+    try {
+      localStorage.removeItem('vd-library-prefs')
+      localStorage.removeItem('vd-ui-prefs')
+    } finally {
+      window.location.reload()
+    }
   }
 
   private readonly reset = (): void => {
@@ -67,9 +78,17 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
           渲染进程发生未捕获错误，重新加载即可恢复。
         </p>
         <div className="max-w-md break-all text-xs text-neutral-400">{error.message}</div>
-        <button className="btn-primary mt-2" onClick={this.reload}>
-          重新加载
-        </button>
+        <div className="mt-2 flex gap-2">
+          <button className="btn-primary" onClick={this.reload}>
+            重新加载
+          </button>
+          <button
+            className="btn-ghost border border-neutral-300 dark:border-neutral-700"
+            onClick={this.resetPrefsAndReload}
+          >
+            仍崩溃？重置界面偏好
+          </button>
+        </div>
       </div>
     )
   }

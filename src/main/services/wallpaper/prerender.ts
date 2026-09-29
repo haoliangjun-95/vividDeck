@@ -75,5 +75,32 @@ export async function prerenderFill(
   }
 
   await pipeline.jpeg({ quality: 95 }).toFile(target)
+  evictAppliedLRU()
   return target
+}
+
+/** applied/ LRU 上限：预渲染缓存整体可再生，超限时按 mtime 淘汰最旧文件
+ *  （此前无上限，5000 图 × 多屏多模式可累积数十 GB） */
+const APPLIED_LRU_MAX = 120
+let evictScheduled = false
+function evictAppliedLRU(): void {
+  // 去抖：一次轮播周期可能连写多张，合并为一次目录扫描
+  if (evictScheduled) return
+  evictScheduled = true
+  setTimeout(() => {
+    evictScheduled = false
+    try {
+      const dir = appliedDir()
+      const files = fs
+        .readdirSync(dir)
+        .filter((n) => /^[0-9a-f]{16}\.jpg$/.test(n))
+        .map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs }))
+        .sort((a, b) => a.t - b.t)
+      for (const f of files.slice(0, Math.max(0, files.length - APPLIED_LRU_MAX))) {
+        fs.rmSync(path.join(dir, f.n), { force: true })
+      }
+    } catch {
+      /* 目录不存在等异常忽略（下次写入再试） */
+    }
+  }, 5000).unref?.()
 }

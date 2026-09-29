@@ -24,12 +24,8 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: [
-        'src/shared/album.ts',
-        'src/main/services/sync/merge.ts',
-        'src/main/services/sync/health.ts',
-        'src/renderer/src/lib/virtualGrid.ts'
-      ],
+      // 覆盖被测的纯逻辑与 service 层（此前 include 只列 4 个文件，严重低估）
+      include: ['src/shared/**/*.ts', 'src/main/services/**/*.ts', 'src/renderer/src/lib/**/*.ts'],
       reporter: ['text', 'html']
     }
   }

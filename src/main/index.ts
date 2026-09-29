@@ -19,26 +19,73 @@ import {
 } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { registerIpcHandlers } from './ipc'
-import { initSlideshow, nextSlideshowNow, flushSlideshow } from './services/slideshow'
-import { initWatchers } from './services/watcher'
-import { getSettings } from './services/settings'
-import { customStorageDirMissing } from './services/paths'
-import { flushLibrary, snapshotLibraryIfDue } from './services/library'
-import { flushHistory } from './services/history'
-import { resolveMediaPath } from './media'
 import { initLogger, installCrashHandlers } from './services/logger'
-import { flushSyncConfig } from './services/sync/store'
-import { flushSyncEngine, initSyncEngine, syncNow } from './services/sync/engine'
-import {
-  flushBubble,
-  initBubble,
-  isBubbleVisible,
-  onBubbleOpenMain,
-  setBubbleEnabled
-} from './bubble'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 薄 bootstrap：ESM 静态 import 会先于本模块任何语句求值——此前 ipc→library→db
+ * 在模块求值期就打开 SQLite（还有 paths 的迁移 I/O），全部发生在 initLogger/
+ * installCrashHandlers 之前，该区间的崩溃既无日志也无对话框（启动段错误即静默）。
+ * 现在静态依赖只剩 electron 与 logger（logger 自身不再依赖任何服务模块），
+ * 全部服务经 loadServices() 在日志/兜底就绪后延迟加载。
+ */
+interface Services {
+  ipc: typeof import('./ipc')
+  slideshow: typeof import('./services/slideshow')
+  watcher: typeof import('./services/watcher')
+  settings: typeof import('./services/settings')
+  paths: typeof import('./services/paths')
+  library: typeof import('./services/library')
+  history: typeof import('./services/history')
+  media: typeof import('./media')
+  syncStore: typeof import('./services/sync/store')
+  syncEngine: typeof import('./services/sync/engine')
+  bubble: typeof import('./bubble')
+}
+let svc: Services | null = null
+async function loadServices(): Promise<Services> {
+  if (svc) return svc
+  const [
+    ipc,
+    slideshow,
+    watcher,
+    settings,
+    paths,
+    library,
+    history,
+    media,
+    syncStore,
+    syncEngine,
+    bubble
+  ] = await Promise.all([
+    import('./ipc'),
+    import('./services/slideshow'),
+    import('./services/watcher'),
+    import('./services/settings'),
+    import('./services/paths'),
+    import('./services/library'),
+    import('./services/history'),
+    import('./media'),
+    import('./services/sync/store'),
+    import('./services/sync/engine'),
+    import('./bubble')
+  ])
+  svc = {
+    ipc,
+    slideshow,
+    watcher,
+    settings,
+    paths,
+    library,
+    history,
+    media,
+    syncStore,
+    syncEngine,
+    bubble
+  }
+  return svc
+}
 
 // ---------- 日志落盘 + 崩溃兜底（#14，须尽早，先于单实例锁与各服务初始化） ----------
 initLogger()
@@ -111,7 +158,9 @@ function showMainWindow(): void {
 
 /** 托盘"下一张"：直接调用轮播服务（配置了范围才有素材池） */
 function trayNext(): void {
-  void nextSlideshowNow().catch((err) => console.error('[tray] 下一张失败:', err))
+  void loadServices()
+    .then((s) => s.slideshow.nextSlideshowNow())
+    .catch((err) => console.error('[tray] 下一张失败:', err))
 }
 
 function quitApp(): void {
@@ -133,9 +182,10 @@ function createTray(): void {
   tray.on('click', () => showMainWindow())
 }
 
-/** 托盘菜单（悬浮球开关状态变化后重建） */
+/** 托盘菜单（悬浮球开关状态变化后重建）。调用点均在 loadServices 完成之后 */
 function rebuildTrayMenu(): void {
-  if (!tray) return
+  if (!tray || !svc) return
+  const bubble = svc.bubble
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '打开 vividDeck', click: () => showMainWindow() },
@@ -143,12 +193,15 @@ function rebuildTrayMenu(): void {
       { label: '下一张壁纸', click: () => trayNext() },
       {
         label: '立即同步',
-        click: () => void syncNow().catch((err) => console.error('[tray] 同步失败:', err))
+        click: () =>
+          void loadServices()
+            .then((s) => s.syncEngine.syncNow())
+            .catch((err) => console.error('[tray] 同步失败:', err))
       },
       { type: 'separator' },
       {
-        label: `${isBubbleVisible() ? '隐藏' : '显示'}桌面悬浮球`,
-        click: () => setBubbleEnabled(!isBubbleVisible())
+        label: `${bubble.isBubbleVisible() ? '隐藏' : '显示'}桌面悬浮球`,
+        click: () => bubble.setBubbleEnabled(!bubble.isBubbleVisible())
       },
       { type: 'separator' },
       { label: '退出', click: () => quitApp() }
@@ -206,10 +259,11 @@ function createAppMenu(): void {
 }
 
 // ---------- 生命周期 ----------
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const s = await loadServices()
   // 自定义存储目录不可用（如外置磁盘未挂载）：明确报错退出，
   // 避免回退默认目录后把"空库"覆盖写回，造成数据"消失"的错觉
-  if (customStorageDirMissing()) {
+  if (s.paths.customStorageDirMissing()) {
     dialog.showErrorBox(
       '存储目录不可用',
       'vividDeck 的数据存储目录当前无法访问（若使用外置磁盘，请先挂载后重试）。\n\n可以在挂载后重新启动应用，或删除用户数据目录下的 storage-dir.json 文件以恢复默认目录。'
@@ -224,7 +278,7 @@ app.whenReady().then(() => {
       // 形如 media://thumb/<imageId>
       const match = /^media:\/\/(thumb|preview|original)\/([\w-]+)(?:\?.*)?$/.exec(request.url)
       if (!match) return new Response('Not Found', { status: 404 })
-      const filePath = await resolveMediaPath(
+      const filePath = await s.media.resolveMediaPath(
         match[1] as 'thumb' | 'preview' | 'original',
         match[2]
       )
@@ -239,22 +293,22 @@ app.whenReady().then(() => {
     }
   })
 
-  nativeTheme.themeSource = getSettings().theme
+  nativeTheme.themeSource = s.settings.getSettings().theme
 
-  registerIpcHandlers()
+  s.ipc.registerIpcHandlers()
   createAppMenu()
   createWindow()
   createTray()
-  initSlideshow()
-  initSyncEngine()
+  s.slideshow.initSlideshow()
+  s.syncEngine.initSyncEngine()
   // 文件夹监视自动导入（设置页配置的目录）
-  initWatchers(getSettings().watchFolders)
+  s.watcher.initWatchers(s.settings.getSettings().watchFolders)
   // 素材库周快照（每周一份，保留 4 份；失败不影响启动）
-  const backedUp = snapshotLibraryIfDue()
+  const backedUp = s.library.snapshotLibraryIfDue()
   if (backedUp) console.log(`[library] 已生成周期快照: ${backedUp}`)
   // 桌面悬浮球（点击切换壁纸）；托盘菜单随其开关状态重建
-  initBubble(rebuildTrayMenu)
-  onBubbleOpenMain(showMainWindow)
+  s.bubble.initBubble(rebuildTrayMenu)
+  s.bubble.onBubbleOpenMain(showMainWindow)
 
   app.on('activate', () => {
     // macOS 点击 Dock 图标重新显示窗口
@@ -268,13 +322,15 @@ app.on('before-quit', () => {
   // 标记真实退出：托盘菜单 / Cmd+Q / 外部 SIGTERM（logout 等）都会经过这里；
   // 未置标记时窗口 close 会被"隐藏到托盘"逻辑拦截，导致应用杀不死
   ;(app as unknown as { __isQuitting?: boolean }).__isQuitting = true
-  // 退出前确保全部数据落盘
-  flushLibrary()
-  flushHistory()
-  flushSlideshow()
-  flushSyncConfig()
-  flushSyncEngine()
-  flushBubble()
+  // 退出前确保全部数据落盘（服务尚未加载的极早期退出无数据可落）
+  if (svc) {
+    svc.library.flushLibrary()
+    svc.history.flushHistory()
+    svc.slideshow.flushSlideshow()
+    svc.syncStore.flushSyncConfig()
+    svc.syncEngine.flushSyncEngine()
+    svc.bubble.flushBubble()
+  }
 })
 
 // 托盘常驻：窗口全部关闭不退出应用（由托盘菜单或 Cmd+Q 退出）

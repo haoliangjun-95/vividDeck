@@ -42,12 +42,15 @@ vi.mock('@main/services/paths', async () => {
 })
 
 vi.mock('@main/services/thumbnails', async () => {
+  // 复用真实命名派生（sanitizeIdSegment），mock 只替换目录——
+  // 此前重实现命名函数掩盖了 cache.ts 白名单与真实字符集的漂移
   const p = await import('node:path')
+  const { sanitizeIdSegment } = await import('@main/utils/fs')
+  const base = (img: { id: string; hash: string }): string =>
+    `${sanitizeIdSegment(img.id)}_${img.hash.slice(0, 8)}`
   return {
-    thumbPath: (img: { id: string; hash: string }) =>
-      p.join(h.dirs.thumb, `${img.id}_${img.hash.slice(0, 8)}.webp`),
-    previewPath: (img: { id: string; hash: string }) =>
-      p.join(h.dirs.preview, `${img.id}_${img.hash.slice(0, 8)}.jpg`)
+    thumbPath: (img: { id: string; hash: string }) => p.join(h.dirs.thumb, `${base(img)}.webp`),
+    previewPath: (img: { id: string; hash: string }) => p.join(h.dirs.preview, `${base(img)}.jpg`)
   }
 })
 
@@ -142,5 +145,19 @@ describe('cleanCache 临时目录集成', () => {
     const r = await cleanCache()
     expect(r.removed).toBe(1)
     expect(existsSync(path.join(h.dirs.thumb, 'aaa111_deadbeef.webp'))).toBe(false)
+  })
+})
+
+describe('云端风格 id 的孤儿缓存（白名单字符集回归）', () => {
+  it('id 含大写/连字符的记录产生的缓存文件能被识别为孤儿并清理', async () => {
+    // 空库：该缓存文件即孤儿；命名与 thumbnails.ts 派生一致（大写/连字符保留）
+    h.images = []
+    mkdirSync(h.dirs.thumb, { recursive: true })
+    const name = `Cloud-Id-1_${'a'.repeat(8)}.webp`
+    writeFileSync(path.join(h.dirs.thumb, name), 'x')
+    const { cleanCache } = await import('@main/services/cache')
+    const r = await cleanCache()
+    expect(r.removed).toBe(1)
+    expect(existsSync(path.join(h.dirs.thumb, name))).toBe(false)
   })
 })
