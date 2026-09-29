@@ -151,18 +151,14 @@ export function GalleryGrid(): JSX.Element {
     setActiveIndex(null) // 键盘活动卡片随列表一起重置
   }, [filterSig, setActiveIndex])
 
-  // Esc 退出批量选择（无弹窗时）；Cmd/Ctrl+Z 撤销最近批量操作（无输入焦点时）
+  // Esc 退出批量选择；Cmd/Ctrl+Z 撤销最近批量操作（无输入焦点时）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const el = document.activeElement
       const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
-      if (
-        e.key === 'Escape' &&
-        selectionMode &&
-        !categoryPickerOpen &&
-        !tagPickerOpen &&
-        !deleteConfirmOpen
-      ) {
+      // Esc：任何覆盖层（弹窗/菜单/灯箱/重命名）打开时让位——它们各自监听 Esc，
+      // 与键盘导航共用同一 keyboardEnabled 清单，避免一次按键双动作
+      if (e.key === 'Escape' && selectionMode && keyboardEnabled) {
         setSelectionMode(false)
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) {
@@ -178,9 +174,11 @@ export function GalleryGrid(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectionMode, categoryPickerOpen, tagPickerOpen, deleteConfirmOpen, setSelectionMode])
+  }, [selectionMode, keyboardEnabled, setSelectionMode])
 
-  // 虚拟滚动：滚动/尺寸变化时更新渲染窗口（rAF 节流）
+  // 空态分支不渲染滚动容器；容器出现/消失时必须重挂监听——
+  // 否则空态挂载（首次安装/筛选清空）后导入图片，滚动与尺寸监听永久丢失，虚拟滚动失效
+  const gridVisible = !(loaded && images.length === 0)
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -203,7 +201,7 @@ export function GalleryGrid(): JSX.Element {
       if (raf) cancelAnimationFrame(raf)
       ro.disconnect()
     }
-  }, [])
+  }, [gridVisible])
 
   // useCallback 稳定引用：配合 React.memo 的 ImageCard，滚动时不触发全部卡片重渲染
   const openMenu = useCallback((e: React.MouseEvent, image: ImageItem): void => {

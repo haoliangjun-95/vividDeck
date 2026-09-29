@@ -23,7 +23,7 @@ import { registerIpcHandlers } from './ipc'
 import { initSlideshow, nextSlideshowNow, flushSlideshow } from './services/slideshow'
 import { getSettings } from './services/settings'
 import { customStorageDirMissing } from './services/paths'
-import { flushLibrary } from './services/library'
+import { flushLibrary, snapshotLibraryIfDue } from './services/library'
 import { flushHistory } from './services/history'
 import { resolveMediaPath } from './media'
 import { initLogger, installCrashHandlers } from './services/logger'
@@ -246,6 +246,9 @@ app.whenReady().then(() => {
   createTray()
   initSlideshow()
   initSyncEngine()
+  // 素材库周快照（每周一份，保留 4 份；失败不影响启动）
+  const backedUp = snapshotLibraryIfDue()
+  if (backedUp) console.log(`[library] 已生成周期快照: ${backedUp}`)
   // 桌面悬浮球（点击切换壁纸）；托盘菜单随其开关状态重建
   initBubble(rebuildTrayMenu)
   onBubbleOpenMain(showMainWindow)

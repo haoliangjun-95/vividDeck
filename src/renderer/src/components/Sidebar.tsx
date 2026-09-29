@@ -18,6 +18,7 @@ import {
 import { matchAlbum } from '@shared/album'
 import type { SmartAlbum } from '@shared/types'
 import { AlbumEditorModal } from './AlbumEditorModal'
+import { TagManageModal } from './TagManageModal'
 import { useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
 
@@ -130,16 +131,24 @@ export function Sidebar(): JSX.Element {
   const [albumMenu, setAlbumMenu] = useState<{ album: SmartAlbum; x: number; y: number } | null>(
     null
   )
+  /** 标签右键菜单（位置 + 目标标签） */
+  const [tagMenu, setTagMenu] = useState<{ tag: string; x: number; y: number } | null>(null)
+  /** 标签管理弹窗（重命名 / 合并） */
+  const [tagModal, setTagModal] = useState<{ mode: 'rename' | 'merge'; tag: string } | null>(null)
+  const deleteTagAction = useLibraryStore((s) => s.deleteTag)
 
-  // Esc 关闭相册右键菜单
+  // Esc 关闭相册/标签右键菜单
   useEffect(() => {
-    if (!albumMenu) return
+    if (!albumMenu && !tagMenu) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setAlbumMenu(null)
+      if (e.key === 'Escape') {
+        setAlbumMenu(null)
+        setTagMenu(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [albumMenu])
+  }, [albumMenu, tagMenu])
 
   const confirmDeleteAlbum = (album: SmartAlbum): void => {
     if (!confirm(`删除智能相册「${album.name}」？（不影响图片本身）`)) return
@@ -147,6 +156,27 @@ export function Sidebar(): JSX.Element {
       .then(() => {
         if (filter.albumId === album.id) setFilter({ albumId: null })
         toast('相册已删除', 'info')
+      })
+      .catch((err: unknown) =>
+        toast(`删除失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+      )
+  }
+
+  /** 删除标签：从全库图片与智能相册规则移除（不影响图片本身），筛选引用同步清理 */
+  const confirmDeleteTag = (tag: string): void => {
+    const count = images.filter((i) => i.tags.includes(tag)).length
+    if (
+      !confirm(
+        `删除标签「${tag}」？\n将从 ${count} 张图片与所有智能相册规则中移除（不影响图片本身）。`
+      )
+    )
+      return
+    void deleteTagAction(tag)
+      .then((n) => {
+        if (filter.tags.includes(tag)) {
+          setFilter({ tags: filter.tags.filter((t) => t !== tag) })
+        }
+        toast(`已删除标签「${tag}」（${n} 张图片）`, 'info')
       })
       .catch((err: unknown) =>
         toast(`删除失败：${err instanceof Error ? err.message : String(err)}`, 'error')
@@ -368,7 +398,15 @@ export function Sidebar(): JSX.Element {
                         tags: active ? filter.tags.filter((t) => t !== tag) : [...filter.tags, tag]
                       })
                     }
-                    title={active ? '点击取消该标签筛选' : '点击加入筛选（可多选，任一命中即显示）'}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setTagMenu({ tag, x: e.clientX, y: e.clientY })
+                    }}
+                    title={
+                      active
+                        ? '点击取消该标签筛选；右键管理标签'
+                        : '点击加入筛选（可多选，任一命中即显示）；右键管理标签'
+                    }
                   >
                     <Tag size={10} className="mr-0.5 inline align-baseline" />
                     {tag}
@@ -426,6 +464,63 @@ export function Sidebar(): JSX.Element {
       {albumEditorOpen && <AlbumEditorModal onClose={() => setAlbumEditorOpen(false)} />}
       {editingAlbum && (
         <AlbumEditorModal editing={editingAlbum} onClose={() => setEditingAlbum(null)} />
+      )}
+      {tagModal && (
+        <TagManageModal mode={tagModal.mode} tag={tagModal.tag} onClose={() => setTagModal(null)} />
+      )}
+
+      {/* 标签右键菜单：重命名 / 合并到 / 删除 */}
+      {tagMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setTagMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setTagMenu(null)
+            }}
+          />
+          <div
+            role="menu"
+            aria-label={`标签「${tagMenu.tag}」操作`}
+            className="fixed z-50 min-w-[9rem] rounded-lg border border-neutral-200 bg-white py-1 text-sm shadow-lg dark:border-neutral-700 dark:bg-neutral-800"
+            style={{ left: tagMenu.x, top: tagMenu.y }}
+          >
+            <button
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              onClick={() => {
+                setTagModal({ mode: 'rename', tag: tagMenu.tag })
+                setTagMenu(null)
+              }}
+            >
+              <Pencil size={13} />
+              重命名…
+            </button>
+            <button
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              onClick={() => {
+                setTagModal({ mode: 'merge', tag: tagMenu.tag })
+                setTagMenu(null)
+              }}
+            >
+              <Tag size={13} />
+              合并其他标签到此处…
+            </button>
+            <button
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+              onClick={() => {
+                const tag = tagMenu.tag
+                setTagMenu(null)
+                confirmDeleteTag(tag)
+              }}
+            >
+              删除标签
+            </button>
+          </div>
+        </>
       )}
 
       {/* 功能入口 */}

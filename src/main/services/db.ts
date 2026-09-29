@@ -18,6 +18,10 @@ import type { Category, ImageItem, LibraryData, SmartAlbum } from '@shared/types
 
 export type LibraryDb = Database.Database
 
+/** 周快照间隔（7 天）与保留份数 */
+const SNAPSHOT_INTERVAL_MS = 7 * 24 * 3600 * 1000
+const SNAPSHOT_KEEP = 4
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS images (
   id        TEXT PRIMARY KEY,
@@ -174,6 +178,39 @@ export class LibraryDbStore {
     this.db = openLibraryDb(dbFile)
     if (legacyJsonFile) migrateLibraryFromJson(this.db, legacyJsonFile)
     this.data = { ...defaults, ...loadLibraryData(this.db) }
+  }
+
+  /**
+   * 周期快照（启动钩子调用）：距上次超过 7 天（或 force）时
+   * VACUUM INTO 一份自包含备份到 backupDir/library-<ts>.db，按时间戳保留最近 4 份。
+   * 素材库是用户唯一不可再生的数据（同步只传元数据、原图按需下载），
+   * 周快照防 db 损坏/误操作导致全库丢失。返回备份路径；未到期返回 null。
+   */
+  snapshotIfDue(backupDir: string, force = false): string | null {
+    const last = this.db.prepare(`SELECT value FROM meta WHERE key = 'lastSnapshotAt'`).get() as
+      { value: string } | undefined
+    if (!force && last && Date.now() - Number(last.value) < SNAPSHOT_INTERVAL_MS) return null
+    fs.mkdirSync(backupDir, { recursive: true })
+    const file = path.join(backupDir, `library-${Date.now()}.db`)
+    this.db.prepare('VACUUM INTO ?').run(file)
+    // 轮换：文件名内嵌时间戳，按数值排序（位数不同的历史文件名字典序≠时间序）
+    const backups = fs
+      .readdirSync(backupDir)
+      .filter((n) => /^library-(\d+)\.db$/.test(n))
+      .sort(
+        (a, b) =>
+          Number(a.match(/^library-(\d+)\.db$/)![1]) - Number(b.match(/^library-(\d+)\.db$/)![1])
+      )
+    for (const stale of backups.slice(0, Math.max(0, backups.length - SNAPSHOT_KEEP))) {
+      fs.rmSync(path.join(backupDir, stale))
+    }
+    this.db
+      .prepare(
+        `INSERT INTO meta(key, value) VALUES ('lastSnapshotAt', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(String(Date.now()))
+    return file
   }
 
   get(): LibraryData {

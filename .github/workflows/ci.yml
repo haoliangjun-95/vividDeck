@@ -1,0 +1,62 @@
+# CI：代码检查（lint/typecheck/test）+ 双平台安装包构建
+# - check 在 ubuntu 上跑，跳过 Electron 二进制下载（vitest 走系统 Node，
+#   better-sqlite3/sharp 均有 linux 预编译）
+# - 安装包产物以 artifact 形式上传（macOS dmg 双架构 / Windows NSIS exe），
+#   供手动分发；后续接入 electron-updater 时在此挂 tag 触发的 Release 发布
+name: CI
+
+on:
+  push:
+    branches: [main, 'dev/**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          # 检查作业不需要 Electron 运行时，跳过 ~100MB 二进制下载
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  build-macos:
+    runs-on: macos-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vividDeck-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vividDeck-windows
+          path: dist/vividDeck-Setup-*.exe
+          if-no-files-found: error

@@ -26,6 +26,10 @@ export const IPC = {
   LIBRARY_RESTORE_IMAGES: 'library:restoreImages', // { ids } -> { restored }（撤销删除）
   LIBRARY_APPLY_ENTRIES: 'library:applyEntries', // { entries } -> LibraryData（按图恢复属性，撤销逆操作）
   LIBRARY_SET_TAGS_MANY: 'library:setTagsMany', // { entries: {id, tags}[] } -> LibraryData（批量按图标签）
+  LIBRARY_RENAME_TAG: 'library:renameTag', // { from, to } -> { renamed }（全库 + 相册规则改写）
+  LIBRARY_MERGE_TAGS: 'library:mergeTags', // { sources, into } -> { merged }
+  LIBRARY_DELETE_TAG: 'library:deleteTag', // { tag } -> { removed }
+  LIBRARY_BACKFILL_TAKEN_AT: 'library:backfillTakenAt', // {} -> { scanned, updated }（为本地图回填 EXIF 拍摄时间）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData

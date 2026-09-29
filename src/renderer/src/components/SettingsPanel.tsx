@@ -2,8 +2,9 @@
  * 设置面板：外观主题、默认填充模式、导入模式、存储位置（可整体迁移）、同步占位
  */
 import React, { useEffect, useState } from 'react'
-import { Eraser, FolderOpen, HardDrive, Loader2 } from 'lucide-react'
+import { CalendarClock, Eraser, FolderOpen, HardDrive, Loader2 } from 'lucide-react'
 import { useUIStore } from '../store/ui'
+import { useLibraryStore } from '../store/library'
 import { formatBytes } from '../lib/utils'
 import { FILL_MODE_LABELS, type AppSettings, type FillMode } from '@shared/types'
 import { SyncSection } from './SyncSection'
@@ -28,6 +29,7 @@ export function SettingsPanel(): JSX.Element {
   } | null>(null)
   const [migrating, setMigrating] = useState(false)
   const [cleaning, setCleaning] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
 
   const reloadStorage = (): void => {
     void window.api
@@ -76,6 +78,25 @@ export function SettingsPanel(): JSX.Element {
       toast(`清理失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setCleaning(false)
+    }
+  }
+
+  /** EXIF 拍摄时间回填：为缺 takenAt 的本地图补扫，结果 toast 并刷新画廊 */
+  const backfillTaken = async (): Promise<void> => {
+    setBackfilling(true)
+    try {
+      const r = await window.api.backfillTakenAt()
+      toast(
+        r.updated > 0
+          ? `已为 ${r.updated}/${r.scanned} 张补上拍摄时间`
+          : '扫描完成，没有需要回填的图片',
+        'info'
+      )
+      void useLibraryStore.getState().load()
+    } catch (err) {
+      toast(`回填失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setBackfilling(false)
     }
   }
 
@@ -263,6 +284,28 @@ export function SettingsPanel(): JSX.Element {
               >
                 {cleaning ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
                 清理缓存
+              </button>
+            </div>
+            {/* EXIF 拍摄时间回填：旧版本导入/同步下载的图入库时未采集，补扫本地文件 */}
+            <div className="flex items-center justify-between rounded-lg border border-neutral-300 p-3 dark:border-neutral-700">
+              <div className="min-w-0">
+                <div className="text-xs text-neutral-500 dark:text-neutral-300">拍摄时间回填</div>
+                <div className="mt-0.5 text-xs text-neutral-400">
+                  为缺拍摄时间的本地图读取
+                  EXIF（供「最新拍摄」排序与信息面板使用），结果自动同步到其他设备
+                </div>
+              </div>
+              <button
+                className="btn-ghost shrink-0 border border-neutral-300 dark:border-neutral-700"
+                disabled={backfilling}
+                onClick={() => void backfillTaken()}
+              >
+                {backfilling ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <CalendarClock size={14} />
+                )}
+                扫描并回填
               </button>
             </div>
             <p className="text-xs leading-relaxed text-neutral-400">

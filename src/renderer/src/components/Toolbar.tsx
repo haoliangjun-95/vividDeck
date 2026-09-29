@@ -26,6 +26,8 @@ const SIZE_OPTIONS = [
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'added-desc', label: '最新添加' },
   { value: 'added-asc', label: '最早添加' },
+  { value: 'taken-desc', label: '最新拍摄' },
+  { value: 'taken-asc', label: '最早拍摄' },
   { value: 'name-asc', label: '文件名' },
   { value: 'size-desc', label: '文件最大' }
 ]

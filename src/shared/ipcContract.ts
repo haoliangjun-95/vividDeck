@@ -129,6 +129,26 @@ export interface IpcContract extends Record<IpcChannelName, IpcChannelDef> {
     [payload: { entries: { id: string; tags: string[] }[] }],
     LibraryData
   >
+  [IPC.LIBRARY_RENAME_TAG]: IpcChannelDef<
+    'envelope',
+    [payload: { from: string; to: string }],
+    { renamed: number }
+  >
+  [IPC.LIBRARY_MERGE_TAGS]: IpcChannelDef<
+    'envelope',
+    [payload: { sources: string[]; into: string }],
+    { merged: number }
+  >
+  [IPC.LIBRARY_DELETE_TAG]: IpcChannelDef<
+    'envelope',
+    [payload: { tag: string }],
+    { removed: number }
+  >
+  [IPC.LIBRARY_BACKFILL_TAKEN_AT]: IpcChannelDef<
+    'envelope',
+    [],
+    { scanned: number; updated: number }
+  >
   [IPC.LIBRARY_ADD_CATEGORY]: IpcChannelDef<'envelope', [payload: { name: string }], LibraryData>
   [IPC.LIBRARY_RENAME_CATEGORY]: IpcChannelDef<
     'envelope',

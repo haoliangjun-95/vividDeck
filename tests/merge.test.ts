@@ -273,6 +273,29 @@ describe('智能相册合并', () => {
     )
     expect(out.albums).toHaveLength(0)
   })
+
+  it('远端 album 墓碑传播：本地与远端清单里的同 id 相册一并删除，墓碑保留待重发布', () => {
+    // 设备 B 删除相册（deleteAlbum 写 kind:'album' 墓碑）；设备 A 本地仍有该相册，
+    // 且 B 的旧清单 albums 里也还带着它 —— 合并后不得复活
+    const out = mergeAll(
+      input({
+        localAlbums: [album('al-1', '本地仍在', 1000), album('al-2', '保留', 1000)],
+        remoteManifests: [
+          makeManifest([], {
+            albums: [album('al-1', '远端清单仍带', 2000)],
+            tombstones: [tomb('al-1', 5000, { kind: 'album', deletedBy: 'dev-B' })]
+          })
+        ]
+      })
+    )
+    expect(out.albums.map((a) => a.id)).toEqual(['al-2'])
+    // album 墓碑进入输出集合（kind 保持 'album'），随下次发布继续传播
+    const dead = out.tombstones.find((t) => t.id === 'al-1')
+    expect(dead?.kind).toBe('album')
+    expect(dead?.deletedBy).toBe('dev-B')
+    // LWW 更新的远端版本也不得越过墓碑复活（updatedAt 2000 > 墓碑 5000 之外的场景由 id 判死）
+    expect(out.albums.some((a) => a.id === 'al-1')).toBe(false)
+  })
 })
 
 describe('manifestToPublish 幂等', () => {

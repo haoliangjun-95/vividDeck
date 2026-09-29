@@ -70,6 +70,10 @@ export function useGalleryKeyboard({
         }
       }
 
+      // 修饰键组合（Cmd/Ctrl/Alt+方向、回车等）是系统/读屏快捷键
+      // （如 macOS VoiceOver 的 Ctrl+Option+方向导航），一律放行不劫持
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+
       const isNav = NAV_KEYS.has(e.key)
       const isEnter = e.key === 'Enter'
       const isSpace = e.key === ' '

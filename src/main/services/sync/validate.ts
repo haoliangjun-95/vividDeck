@@ -82,6 +82,10 @@ function sanitizeRecord(raw: unknown, key: string): SyncImageRecord | null {
     height: validSize(r.height),
     sizeBytes: validSize(r.sizeBytes),
     format,
+    takenAt:
+      typeof r.takenAt === 'number' && Number.isFinite(r.takenAt) && r.takenAt > 0
+        ? Math.round(r.takenAt)
+        : null,
     categoryId: validId(r.categoryId) ? r.categoryId : null,
     tags: sanitizeTags(r.tags),
     favorite: r.favorite === true,
@@ -102,7 +106,9 @@ function sanitizeCategory(raw: unknown): Category | null {
     name,
     createdAt: validTime(r.createdAt),
     updatedAt: validTime(r.updatedAt),
-    ...(typeof r.order === 'number' && Number.isFinite(r.order) ? { order: Math.round(r.order) } : {})
+    ...(typeof r.order === 'number' && Number.isFinite(r.order)
+      ? { order: Math.round(r.order) }
+      : {})
   }
 }
 
@@ -115,7 +121,8 @@ function sanitizeRules(raw: unknown): SmartAlbumRules {
   const tagsAny = sanitizeTags(r.tagsAny)
   if (tagsAll.length > 0) rules.tagsAll = tagsAll
   if (tagsAny.length > 0) rules.tagsAny = tagsAny
-  if (r.orientation === 'landscape' || r.orientation === 'portrait') rules.orientation = r.orientation
+  if (r.orientation === 'landscape' || r.orientation === 'portrait')
+    rules.orientation = r.orientation
   if (typeof r.minAspect === 'number' && Number.isFinite(r.minAspect)) rules.minAspect = r.minAspect
   if (typeof r.maxAspect === 'number' && Number.isFinite(r.maxAspect)) rules.maxAspect = r.maxAspect
   if (typeof r.minWidth === 'number' && Number.isFinite(r.minWidth) && r.minWidth >= 0) {
@@ -150,7 +157,7 @@ function sanitizeTombstone(raw: unknown): SyncTombstone | null {
   if (!validId(r.id)) return null
   return {
     id: r.id,
-    kind: r.kind === 'category' ? 'category' : 'image',
+    kind: r.kind === 'category' || r.kind === 'album' ? r.kind : 'image',
     deletedAt: validTime(r.deletedAt),
     deletedBy: validStr(r.deletedBy, 64) ?? ''
   }
@@ -177,7 +184,9 @@ export function sanitizeManifest(raw: unknown, key: string): SyncManifest | null
   }
   const m = raw as Record<string, unknown>
   if (m.version !== 1 || !Array.isArray(m.images)) {
-    console.warn(`[sync-validate] ${key}: version/images 非法（version=${String(m.version)}），已丢弃`)
+    console.warn(
+      `[sync-validate] ${key}: version/images 非法（version=${String(m.version)}），已丢弃`
+    )
     return null
   }
   const before = m.images.length

@@ -219,3 +219,45 @@ describe('LibraryDbStore：与 JsonStore 同接口的 SQLite 存储', () => {
     expect(store.get().images).toHaveLength(2)
   })
 })
+
+describe('snapshotIfDue：周期快照与轮换', () => {
+  let backupDir: string
+
+  beforeEach(() => {
+    backupDir = path.join(tmpDir, 'backups')
+  })
+
+  it('force 快照产出自包含备份，可独立打开且数据一致；未到期时返回 null', () => {
+    store = new LibraryDbStore(dbFile, EMPTY)
+    const data = sampleData()
+    store.replace(data)
+    store.flush()
+    const file = store.snapshotIfDue(backupDir, true)
+    expect(file).not.toBeNull()
+    expect(fs.existsSync(file as string)).toBe(true)
+    // 备份自包含：独立打开即完整数据（VACUUM INTO 含已提交内容，无需 WAL）
+    const backupDb = openLibraryDb(file as string)
+    expect(loadLibraryData(backupDb).images).toHaveLength(2)
+    backupDb.close()
+    // 刚快照过 → 未到 7 天间隔，非 force 不再产生
+    expect(store.snapshotIfDue(backupDir)).toBeNull()
+  })
+
+  it('轮换：按时间戳保留最近 4 份，最旧的被清理', () => {
+    store = new LibraryDbStore(dbFile, EMPTY)
+    // 预置 4 份"旧"备份（时间戳命名）
+    fs.mkdirSync(backupDir, { recursive: true })
+    for (const ts of [1000, 2000, 3000, 4000]) {
+      fs.writeFileSync(path.join(backupDir, `library-${ts}.db`), '')
+    }
+    store.snapshotIfDue(backupDir, true)
+    // 数值时间序（字符串序在位数不同时≠时间序）
+    const remaining = fs
+      .readdirSync(backupDir)
+      .sort((a, b) => Number(a.match(/\d+/)?.[0] ?? 0) - Number(b.match(/\d+/)?.[0] ?? 0))
+    expect(remaining).toHaveLength(4)
+    // 最旧的 library-1000.db 被清掉，快照本体（时间戳最大）保留
+    expect(remaining.some((n) => n === 'library-1000.db')).toBe(false)
+    expect(remaining[remaining.length - 1]).toMatch(/^library-\d{13}\.db$/)
+  })
+})

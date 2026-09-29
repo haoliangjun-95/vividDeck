@@ -29,11 +29,14 @@ import {
   sanitizeIdSegment,
   splitFileName
 } from '../utils/fs'
-import { dataDir, isRealFile, libraryDir, trashStagingDir } from './paths'
+import { readTakenAt } from '../utils/exif'
+import { runPool } from '../utils/concurrency'
+import { dataDir, isRealFile, libraryDir, storageRoot, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
 import { getSettings } from './settings'
 import { getDeviceId } from './device'
 import { matchAlbum } from '@shared/album'
+import { normalizeTagName, rewriteAlbumsForTag } from '@shared/tagOps'
 import { addTombstone, removeTombstones } from './tombstones'
 import type { SyncImageRecord } from '@shared/types'
 
@@ -234,7 +237,8 @@ async function buildImageRecord(
     width: meta.width ?? 0,
     height: meta.height ?? 0,
     sizeBytes: stat.size,
-    format
+    format,
+    takenAt: readTakenAt(meta.exif)
   }
 }
 
@@ -408,6 +412,61 @@ export function updateImages(
       stamp(target)
     }
   })
+}
+
+// ---------- 标签管理（重命名 / 合并 / 删除，规则改写见 shared/tagOps） ----------
+
+/** 重命名标签：全库图片 tags 替换（撞名合并去重），相册规则同步改写；返回受影响图片数 */
+export function renameTag(from: string, to: string): { renamed: number } {
+  const name = normalizeTagName(to)
+  if (!name || name === from) throw new Error('新标签名不合法')
+  let renamed = 0
+  commit((data) => {
+    for (const img of data.images) {
+      if (!img.tags.includes(from)) continue
+      img.tags = Array.from(new Set(img.tags.map((t) => (t === from ? name : t))))
+      stamp(img)
+      renamed++
+    }
+    data.albums = rewriteAlbumsForTag(data.albums ?? [], from, name)
+  })
+  return { renamed }
+}
+
+/** 合并标签：sources 并入 into（去重），相册规则改写；返回受影响图片数 */
+export function mergeTags(sources: string[], into: string): { merged: number } {
+  const target = normalizeTagName(into)
+  if (!target) throw new Error('目标标签名不合法')
+  const srcSet = new Set(sources.map((s) => s.trim()).filter((s) => s && s !== target))
+  if (srcSet.size === 0) throw new Error('没有可合并的源标签')
+  let merged = 0
+  commit((data) => {
+    for (const img of data.images) {
+      if (!img.tags.some((t) => srcSet.has(t))) continue
+      img.tags = Array.from(new Set([...img.tags.filter((t) => !srcSet.has(t)), target]))
+      stamp(img)
+      merged++
+    }
+    for (const from of srcSet) {
+      data.albums = rewriteAlbumsForTag(data.albums ?? [], from, target)
+    }
+  })
+  return { merged }
+}
+
+/** 删除标签：从全库图片与相册规则中移除；返回受影响图片数 */
+export function deleteTag(tag: string): { removed: number } {
+  let removed = 0
+  commit((data) => {
+    for (const img of data.images) {
+      if (!img.tags.includes(tag)) continue
+      img.tags = img.tags.filter((t) => t !== tag)
+      stamp(img)
+      removed++
+    }
+    data.albums = rewriteAlbumsForTag(data.albums ?? [], tag, null)
+  })
+  return { removed }
 }
 
 /** 删除模式：all = 所有设备（墓碑同步传播）；local = 仅清理本地副本（不同步） */
@@ -676,6 +735,10 @@ export function updateAlbum(
 }
 
 export function deleteAlbum(id: string): LibraryData {
+  // 只删除相册定义，绝不触碰图片记录/文件；
+  // 写 album 墓碑让删除经同步传播到其他设备，并阻止下次合并时被
+  // 仍带着该相册的远端清单复活（merge 5.5b 对相册同样应用 isDead）
+  addTombstone(id, 'album')
   return commit((data) => {
     data.albums = (data.albums ?? []).filter((a) => a.id !== id)
   })
@@ -745,6 +808,7 @@ export function toSyncRecord(img: ImageItem): SyncImageRecord {
     height: img.height,
     sizeBytes: img.sizeBytes,
     format: img.format,
+    takenAt: img.takenAt ?? null,
     categoryId: img.categoryId,
     tags: img.tags,
     favorite: img.favorite,
@@ -757,6 +821,53 @@ export function toSyncRecord(img: ImageItem): SyncImageRecord {
 /** 退出前落盘 */
 export function flushLibrary(): void {
   libraryStore.flush()
+}
+
+/**
+ * 周期快照（index.ts 启动时调用）：素材库是唯一不可再生数据，
+ * 每周落一份 VACUUM INTO 自包含备份到 <存储根>/backups/，保留最近 4 份。
+ */
+export function snapshotLibraryIfDue(): string | null {
+  try {
+    return libraryStore.snapshotIfDue(path.join(storageRoot(), 'backups'))
+  } catch (err) {
+    console.error('[library] 周期快照失败（不影响使用）:', err)
+    return null
+  }
+}
+
+/**
+ * 回填拍摄时间：为"本地有文件但 takenAt 为空"的记录读 EXIF
+ * （覆盖旧版本导入的图与同步下载的图）。并发 4、单次 commit；
+ * 回填会刷新 updatedAt 让其经 LWW 传播到其他设备。
+ */
+export async function backfillTakenAt(): Promise<{ scanned: number; updated: number }> {
+  const targets = getLibrary().images.filter(
+    (img) => (img.takenAt ?? null) === null && img.localFile && isRealFile(img.path)
+  )
+  if (targets.length === 0) return { scanned: 0, updated: 0 }
+  const found = new Map<string, number>()
+  await runPool(targets, 4, async (img) => {
+    try {
+      const meta = await sharp(img.path).metadata()
+      const takenAt = readTakenAt(meta.exif)
+      if (takenAt !== null) found.set(img.id, takenAt)
+    } catch {
+      /* 单文件解码失败跳过（断链类问题归体检管） */
+    }
+  })
+  if (found.size > 0) {
+    commit((data) => {
+      for (const img of data.images) {
+        const takenAt = found.get(img.id)
+        if (takenAt !== undefined) {
+          img.takenAt = takenAt
+          stamp(img)
+        }
+      }
+    })
+  }
+  return { scanned: targets.length, updated: found.size }
 }
 
 /** WAL 检查点截断：更换存储位置整目录复制前调用，保证副本自包含（数据全部在主 db 文件内） */

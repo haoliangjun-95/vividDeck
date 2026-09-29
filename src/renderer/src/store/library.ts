@@ -15,7 +15,8 @@ import type {
 import { matchAlbum } from '@shared/album'
 import { sanitizeFilter, sanitizeSort } from '../lib/prefs'
 
-export type SortKey = 'added-desc' | 'added-asc' | 'name-asc' | 'size-desc'
+export type SortKey =
+  'added-desc' | 'added-asc' | 'taken-desc' | 'taken-asc' | 'name-asc' | 'size-desc'
 
 interface LibraryState {
   images: ImageItem[]
@@ -42,6 +43,10 @@ interface LibraryState {
   removeMany: (ids: string[]) => Promise<void>
   /** 批量：按图设置标签（增/删混合，单次事务） */
   setTagsMany: (entries: { id: string; tags: string[] }[]) => Promise<void>
+  /** 标签管理：全库重命名 / 合并 / 删除（相册规则同步改写），resolve 受影响图片数 */
+  renameTag: (from: string, to: string) => Promise<number>
+  mergeTags: (sources: string[], into: string) => Promise<number>
+  deleteTag: (tag: string) => Promise<number>
   /** 新建相册；resolve 新相册 id（用于创建后自动选中），失败时 reject */
   addAlbum: (name: string, rules: SmartAlbumRules) => Promise<string | null>
   updateAlbum: (id: string, patch: Partial<Pick<SmartAlbum, 'name' | 'rules'>>) => Promise<void>
@@ -142,6 +147,24 @@ export const useLibraryStore = create<LibraryState>()(
       setTagsMany: async (entries) => {
         const data = await window.api.setTagsMany(entries)
         get().applyData(data)
+      },
+
+      renameTag: async (from, to) => {
+        const r = await window.api.renameTag(from, to)
+        await get().load()
+        return r.renamed
+      },
+
+      mergeTags: async (sources, into) => {
+        const r = await window.api.mergeTags(sources, into)
+        await get().load()
+        return r.merged
+      },
+
+      deleteTag: async (tag) => {
+        const r = await window.api.deleteTag(tag)
+        await get().load()
+        return r.removed
       },
 
       addAlbum: async (name, rules) => {
@@ -260,6 +283,17 @@ export function selectFilteredImages(state: LibraryState): ImageItem[] {
   switch (sort) {
     case 'added-asc':
       sorted.sort((a, b) => a.addedAt - b.addedAt)
+      break
+    case 'taken-desc':
+      // 拍摄时间排序：无 EXIF 的记录（null）排最后，有值按时间比较
+      sorted.sort((a, b) => (b.takenAt ?? 0) - (a.takenAt ?? 0) || a.addedAt - b.addedAt)
+      break
+    case 'taken-asc':
+      sorted.sort((a, b) => {
+        if (a.takenAt === null || a.takenAt === undefined) return 1
+        if (b.takenAt === null || b.takenAt === undefined) return -1
+        return a.takenAt - b.takenAt
+      })
       break
     case 'name-asc':
       sorted.sort((a, b) => a.fileName.localeCompare(b.fileName, 'zh-CN'))

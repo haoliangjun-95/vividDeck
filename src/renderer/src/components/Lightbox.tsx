@@ -165,6 +165,7 @@ function InfoPanel({ imageId }: { imageId: string }) {
           ['分辨率', formatResolution(image)],
           ['文件大小', formatBytes(image.sizeBytes)],
           ['格式', formatLabel(image.format)],
+          ...(image.takenAt ? [['拍摄时间', formatTime(image.takenAt)] as [string, string]] : []),
           [
             '分类',
             image.categoryId

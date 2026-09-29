@@ -2,7 +2,7 @@
  * 图片右键菜单（设为壁纸 / 收藏 / 裁剪 / 重命名 / 删除 / 归类 / 标签）（A1 自 GalleryGrid 拆分）
  * 批量选择模式下右键"已选中"的图片时，分类 / 标签 / 删除 / 收藏对整个选中集生效
  */
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   Crop,
   FolderInput,
@@ -92,11 +92,29 @@ export function CardContextMenu({
     onClose()
   }
 
-  // 菜单尺寸估计，避免贴边溢出屏幕
+  // Esc 关闭（键盘可达性；此前菜单只能点空白处关闭，Esc 反而会触发画廊的其他退出动作）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // 菜单宽度固定（w-52 = 208px）；高度随分类/标签数量变化——旧的 430px 估值在
+  // 分类/标签较多时不足（实测可达 ~530px），底部输入框会被推出屏幕。
+  // 渲染后按实测尺寸夹取（useLayoutEffect 在绘制前完成，无视觉跳动）
   const W = 208
-  const H = 430
-  const left = Math.min(x, window.innerWidth - W - 8)
-  const top = Math.min(y, window.innerHeight - H - 8)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ left: Math.min(x, window.innerWidth - W - 8), top: y })
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    setPos({
+      left: Math.min(x, window.innerWidth - el.offsetWidth - 8),
+      top: Math.max(8, Math.min(y, window.innerHeight - el.offsetHeight - 8))
+    })
+  }, [x, y])
 
   const item =
     'flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-[13px] hover:bg-neutral-100 dark:hover:bg-neutral-700/70'
@@ -111,8 +129,11 @@ export function CardContextMenu({
       }}
     >
       <div
+        ref={menuRef}
+        role="menu"
+        aria-label={`图片「${image.fileName}」操作`}
         className="card fixed w-52 overflow-hidden py-1 shadow-xl"
-        style={{ left, top }}
+        style={{ left: pos.left, top: pos.top }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <button

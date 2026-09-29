@@ -47,9 +47,19 @@ function redactText(text: string): string {
   return out
 }
 
-/** 递归处理日志参数：字符串做模式脱敏；普通对象中敏感 key 的值替换；Error 等实例保持原样 */
+/** 递归处理日志参数：字符串做模式脱敏；Error 拆出 message/stack 逐段脱敏；普通对象中敏感 key 的值替换 */
 function redactValue(value: unknown): unknown {
   if (typeof value === 'string') return redactText(value)
+  // Error 实例：message/stack 常携带 endpoint/凭据（如 MinIO 的
+  // "connect ECONNREFUSED 192.168.x.x:9000"），而 electron-log 对 Error 的
+  // 自有序列化发生在 hook 之后——必须在 hook 里替换为普通对象才能过脱敏
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: redactText(value.message),
+      ...(value.stack !== undefined ? { stack: redactText(value.stack) } : {})
+    }
+  }
   if (Array.isArray(value)) return value.map(redactValue)
   if (value !== null && typeof value === 'object') {
     const proto = Object.getPrototypeOf(value) as unknown
@@ -124,11 +134,18 @@ export function installCrashHandlers(): void {
   app.on('render-process-gone', (_event, contents, details) => {
     log.error(`[crash] 渲染进程退出 reason=${details.reason} exitCode=${details.exitCode}`)
     if (details.reason === 'clean-exit' || contents.isDestroyed()) return
+    // 页面销毁时清理计数，防 Map 随窗口开关缓慢泄漏
+    contents.once('destroyed', () => renderCrashCounts.delete(contents.id))
     const count = (renderCrashCounts.get(contents.id) ?? 0) + 1
     renderCrashCounts.set(contents.id, count)
     if (count === 1) {
       // 首次崩溃：静默重载，尽量不打断使用（主进程轮播不受影响）
       contents.reload()
+      // 重载成功即清零——正常运行一段时间后的再次崩溃仍算"首次"。
+      // （此前只增不清：隔一周的第二次崩溃也会弹"连续崩溃"且从此永不自动恢复）
+      contents.once('did-finish-load', () => {
+        renderCrashCounts.delete(contents.id)
+      })
       return
     }
     // 连续崩溃：停止自动恢复，展示日志位置便于排查

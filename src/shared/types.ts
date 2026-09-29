@@ -25,6 +25,8 @@ export interface ImageItem {
   height: number
   sizeBytes: number
   format: ImageFormat
+  /** 拍摄时间（EXIF DateTimeOriginal，epoch 毫秒）；无 EXIF / 未回填为 null */
+  takenAt?: number | null
   /** 所属分类，null 表示未分类 */
   categoryId: string | null
   tags: string[]
@@ -246,6 +248,8 @@ export interface SyncImageRecord {
   height: number
   sizeBytes: number
   format: ImageFormat
+  /** 拍摄时间（EXIF，epoch 毫秒）；null = 未知（同步透传，LWW 随记录走） */
+  takenAt?: number | null
   categoryId: string | null
   tags: string[]
   favorite: boolean
@@ -257,7 +261,8 @@ export interface SyncImageRecord {
 /** 删除墓碑 */
 export interface SyncTombstone {
   id: string
-  kind: 'image' | 'category'
+  /** image/category 的墓碑阻止对应记录复活；album 墓碑让相册删除跨设备传播 */
+  kind: 'image' | 'category' | 'album'
   deletedAt: number
   deletedBy: string
 }

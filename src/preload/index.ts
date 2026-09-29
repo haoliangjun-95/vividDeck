@@ -93,6 +93,10 @@ const api = {
     call(IPC.LIBRARY_APPLY_ENTRIES, { entries }),
   setTagsMany: (entries: { id: string; tags: string[] }[]) =>
     call(IPC.LIBRARY_SET_TAGS_MANY, { entries }),
+  renameTag: (from: string, to: string) => call(IPC.LIBRARY_RENAME_TAG, { from, to }),
+  mergeTags: (sources: string[], into: string) => call(IPC.LIBRARY_MERGE_TAGS, { sources, into }),
+  deleteTag: (tag: string) => call(IPC.LIBRARY_DELETE_TAG, { tag }),
+  backfillTakenAt: () => call(IPC.LIBRARY_BACKFILL_TAKEN_AT),
   addCategory: (name: string) => call(IPC.LIBRARY_ADD_CATEGORY, { name }),
   renameCategory: (id: string, name: string) => call(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
   deleteCategory: (id: string) => call(IPC.LIBRARY_DELETE_CATEGORY, { id }),
