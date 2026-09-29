@@ -134,6 +134,28 @@ describe('matchAlbum 拍摄日期范围', () => {
   })
 })
 
+describe('matchAlbum 关键词与大小', () => {
+  it('关键词命中文件名或任一标签（不区分大小写）', () => {
+    const a = album({ keyword: 'sunset' })
+    expect(matchAlbum(img({ fileName: 'Sunset-01.jpg' }), a)).toBe(true)
+    expect(matchAlbum(img({ tags: ['SunsetTrip'] }), a)).toBe(true)
+    expect(matchAlbum(img({ fileName: 'beach.png', tags: ['ocean'] }), a)).toBe(false)
+  })
+
+  it('大小范围闭区间（MB），缺字节数跳过规则', () => {
+    const a = album({ minSizeMB: 1, maxSizeMB: 2 })
+    expect(matchAlbum(img({ sizeBytes: 1 * 1024 * 1024 }), a)).toBe(true)
+    expect(matchAlbum(img({ sizeBytes: 2 * 1024 * 1024 }), a)).toBe(true)
+    expect(matchAlbum(img({ sizeBytes: 3 * 1024 * 1024 }), a)).toBe(false)
+    expect(matchAlbum(img({ sizeBytes: undefined }), a)).toBe(true)
+  })
+
+  it('仅设单边时不约束另一侧', () => {
+    expect(matchAlbum(img({ sizeBytes: 100 }), album({ minSizeMB: 1 }))).toBe(false)
+    expect(matchAlbum(img({ sizeBytes: 100 }), album({ maxSizeMB: 1 }))).toBe(true)
+  })
+})
+
 describe('matchAlbums', () => {
   it('返回全部命中的相册 id', () => {
     const albums = [

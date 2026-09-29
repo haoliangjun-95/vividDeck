@@ -78,6 +78,11 @@ export interface SmartAlbumRules {
   /** 拍摄时间范围（EXIF，epoch 毫秒，闭区间）；设置了任一边界时，无拍摄时间的图不匹配 */
   takenFrom?: number
   takenTo?: number
+  /** 关键词：文件名或标签包含（不区分大小写） */
+  keyword?: string
+  /** 文件大小下/上限（MB） */
+  minSizeMB?: number
+  maxSizeMB?: number
 }
 
 export interface SmartAlbum {

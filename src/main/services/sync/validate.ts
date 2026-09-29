@@ -140,6 +140,15 @@ function sanitizeRules(raw: unknown): SmartAlbumRules {
   if (typeof r.takenTo === 'number' && Number.isFinite(r.takenTo) && r.takenTo > 0) {
     rules.takenTo = Math.round(r.takenTo)
   }
+  if (typeof r.keyword === 'string' && r.keyword.trim()) {
+    rules.keyword = r.keyword.slice(0, 100)
+  }
+  if (typeof r.minSizeMB === 'number' && Number.isFinite(r.minSizeMB) && r.minSizeMB > 0) {
+    rules.minSizeMB = r.minSizeMB
+  }
+  if (typeof r.maxSizeMB === 'number' && Number.isFinite(r.maxSizeMB) && r.maxSizeMB > 0) {
+    rules.maxSizeMB = r.maxSizeMB
+  }
   return rules
 }
 

@@ -12,6 +12,10 @@ interface MatchableImage {
   favorite: boolean
   /** 拍摄时间（EXIF，epoch 毫秒）；未知为 null/undefined */
   takenAt?: number | null
+  /** 文件名（keyword 规则用；缺省跳过文件名匹配） */
+  fileName?: string
+  /** 文件字节数（大小范围规则用；缺省跳过该规则） */
+  sizeBytes?: number
 }
 
 export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
@@ -28,6 +32,18 @@ export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
   )
     return false
   if (r.minWidth && img.width < r.minWidth) return false
+  // 关键词：文件名或任一标签包含（不区分大小写）
+  if (r.keyword && r.keyword.trim()) {
+    const kw = r.keyword.trim().toLowerCase()
+    const inName = img.fileName !== undefined && img.fileName.toLowerCase().includes(kw)
+    const inTags = img.tags.some((t) => t.toLowerCase().includes(kw))
+    if (!inName && !inTags) return false
+  }
+  // 文件大小范围（MB；记录缺字节数时跳过，防误杀）
+  if ((r.minSizeMB || r.maxSizeMB) && typeof img.sizeBytes === 'number') {
+    if (r.minSizeMB && img.sizeBytes < r.minSizeMB * 1024 * 1024) return false
+    if (r.maxSizeMB && img.sizeBytes > r.maxSizeMB * 1024 * 1024) return false
+  }
   // 拍摄日期范围（闭区间）：设置了任一边界时，无拍摄时间的图不匹配
   if (r.takenFrom !== undefined || r.takenTo !== undefined) {
     if (img.takenAt === null || img.takenAt === undefined) return false

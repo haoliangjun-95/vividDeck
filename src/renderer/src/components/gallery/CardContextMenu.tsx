@@ -55,41 +55,50 @@ export function CardContextMenu({
       : null
   const N = batchIds?.length ?? 1
 
-  /** 切换标签：单张直接换；批量时以被右键图片的状态为准，对选中集统一加/删 */
-  const toggleTag = (tag: string): void => {
+  /** 切换标签：单张直接换；批量时以被右键图片的状态为准，对选中集统一加/删。
+   *  成功才提示并关菜单；失败留在原地报错（旧实现先报成功） */
+  const toggleTag = async (tag: string): Promise<void> => {
     const has = image.tags.includes(tag)
-    if (batchIds) {
-      const entries = batchIds
-        .map((id) => images.find((i) => i.id === id))
-        .filter((i): i is ImageItem => Boolean(i))
-        .map((i) => ({
-          id: i.id,
-          tags: has ? i.tags.filter((t) => t !== tag) : Array.from(new Set([...i.tags, tag]))
-        }))
-      void setTagsMany(entries)
-      toast(`已${has ? '移除' : '添加'}标签「${tag}」（${N} 张）`, 'info')
-    } else {
-      void setTags(image.id, has ? image.tags.filter((t) => t !== tag) : [...image.tags, tag])
-      toast(`已${has ? '移除' : '添加'}标签「${tag}」`, 'info')
+    try {
+      if (batchIds) {
+        const entries = batchIds
+          .map((id) => images.find((i) => i.id === id))
+          .filter((i): i is ImageItem => Boolean(i))
+          .map((i) => ({
+            id: i.id,
+            tags: has ? i.tags.filter((t) => t !== tag) : Array.from(new Set([...i.tags, tag]))
+          }))
+        await setTagsMany(entries)
+        toast(`已${has ? '移除' : '添加'}标签「${tag}」（${N} 张）`, 'info')
+      } else {
+        await setTags(image.id, has ? image.tags.filter((t) => t !== tag) : [...image.tags, tag])
+        toast(`已${has ? '移除' : '添加'}标签「${tag}」`, 'info')
+      }
+      onClose()
+    } catch (err) {
+      toast(`标签修改失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
-    onClose()
   }
 
-  const addNewTag = (): void => {
+  const addNewTag = async (): Promise<void> => {
     const name = newTag.trim()
     if (!name) return
-    if (batchIds) {
-      const entries = batchIds
-        .map((id) => images.find((i) => i.id === id))
-        .filter((i): i is ImageItem => Boolean(i))
-        .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, name])) }))
-      void setTagsMany(entries)
-      toast(`已添加标签「${name}」（${N} 张）`)
-    } else {
-      void setTags(image.id, Array.from(new Set([...image.tags, name])))
-      toast(`已添加标签「${name}」`)
+    try {
+      if (batchIds) {
+        const entries = batchIds
+          .map((id) => images.find((i) => i.id === id))
+          .filter((i): i is ImageItem => Boolean(i))
+          .map((i) => ({ id: i.id, tags: Array.from(new Set([...i.tags, name])) }))
+        await setTagsMany(entries)
+        toast(`已添加标签「${name}」（${N} 张）`)
+      } else {
+        await setTags(image.id, Array.from(new Set([...image.tags, name])))
+        toast(`已添加标签「${name}」`)
+      }
+      onClose()
+    } catch (err) {
+      toast(`添加标签失败：${err instanceof Error ? err.message : String(err)}`, 'error')
     }
-    onClose()
   }
 
   // Esc 关闭（键盘可达性；此前菜单只能点空白处关闭，Esc 反而会触发画廊的其他退出动作）

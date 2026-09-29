@@ -204,6 +204,10 @@ function SaveFilterAsAlbum({
   const rules: import('@shared/types').SmartAlbumRules = {
     ...(filter.tags.length > 0 ? { tagsAny: [...filter.tags] } : {}),
     ...(filter.minWidth > 0 ? { minWidth: filter.minWidth } : {}),
+    // keyword/大小条件不再静默丢弃（规则系统已支持，此前保存即丢失）
+    ...(filter.keyword.trim() ? { keyword: filter.keyword.trim() } : {}),
+    ...(filter.minSizeMB > 0 ? { minSizeMB: filter.minSizeMB } : {}),
+    ...(filter.maxSizeMB > 0 ? { maxSizeMB: filter.maxSizeMB } : {}),
     ...(filter.categoryId === 'favorites' ? { favoriteOnly: true } : {}),
     ...(filter.categoryId &&
     filter.categoryId !== 'all' &&

@@ -37,6 +37,25 @@ export function SlideshowPanel(): JSX.Element {
     return off
   }, [])
 
+  // ---- 轮播周期：本地草稿 + 防抖提交（数字输入逐键变化，避免 IPC 往返回跳） ----
+  const [intervalDraft, setIntervalDraft] = useState(config?.intervalValue ?? 1)
+  const intervalInited = useRef(false)
+  useEffect(() => {
+    if (config && !intervalInited.current) {
+      intervalInited.current = true
+      setIntervalDraft(config.intervalValue)
+    }
+  }, [config])
+  useEffect(() => {
+    if (!intervalInited.current || !config) return
+    if (intervalDraft === config.intervalValue) return
+    const t = setTimeout(() => {
+      void patch({ intervalValue: intervalDraft })
+    }, 400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 草稿与 config 对比在体内处理
+  }, [intervalDraft])
+
   // ---- 时段范围：本地草稿 + 防抖提交（时间输入逐键变化，避免 IPC 往返回跳） ----
   const [timeScopes, setTimeScopes] = useState<TimeScope[]>([])
   const timeDraftInited = useRef(false)
@@ -130,10 +149,9 @@ export function SlideshowPanel(): JSX.Element {
             min={1}
             max={720}
             className="field w-20"
-            value={config.intervalValue}
-            onChange={(e) =>
-              void patch({ intervalValue: Math.max(1, Number(e.target.value) || 1) })
-            }
+            value={intervalDraft}
+            onChange={(e) => setIntervalDraft(Math.max(1, Number(e.target.value) || 1))}
+            onBlur={() => setIntervalDraft(config.intervalValue)}
           />
           <select
             className="field"
@@ -440,6 +458,18 @@ function MonitorCard({
     })
   }
 
+  // 每屏周期草稿 + 防抖提交（与全局周期输入同模式，避免逐键 IPC 往返回跳）。
+  // draft 为 null = 未在编辑，跟随 eff；onBlur 未提交时回退显示
+  const [intervalDraft, setIntervalDraft] = useState<number | null>(null)
+  useEffect(() => {
+    if (intervalDraft === null) return
+    const t = setTimeout(() => {
+      if (intervalDraft !== eff.intervalValue) patchOverride({ intervalValue: intervalDraft })
+    }, 400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patchOverride 依赖闭包内的 config/o，编辑会话内引用稳定
+  }, [intervalDraft])
+
   const scopeLabel = (sc: SlideshowScope): string => {
     if (sc.type === 'all') return '全部图库'
     if (sc.type === 'favorite') return '收藏'
@@ -516,10 +546,9 @@ function MonitorCard({
               type="number"
               min={1}
               className="field w-16 !py-1"
-              value={eff.intervalValue}
-              onChange={(e) =>
-                patchOverride({ intervalValue: Math.max(1, Number(e.target.value) || 1) })
-              }
+              value={intervalDraft ?? eff.intervalValue}
+              onChange={(e) => setIntervalDraft(Math.max(1, Number(e.target.value) || 1))}
+              onBlur={() => setIntervalDraft(null)}
             />
             <select
               className="field !py-1"

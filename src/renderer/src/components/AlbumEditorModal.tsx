@@ -87,8 +87,10 @@ export function AlbumEditorModal({
     )
   }
 
+  const [busy, setBusy] = useState(false)
   const save = async (): Promise<void> => {
-    if (!name.trim()) return
+    if (!name.trim() || busy) return
+    setBusy(true)
     try {
       if (editing) {
         await updateAlbum(editing.id, { name: name.trim(), rules })
@@ -101,6 +103,8 @@ export function AlbumEditorModal({
       onClose()
     } catch (err) {
       toast(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -285,6 +289,47 @@ export function AlbumEditorModal({
           </label>
         </div>
 
+        {/* 关键词 + 文件大小（“存为相册”入口带进来的条件，可继续编辑） */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1.5">
+            关键词
+            <input
+              className="field !w-36 !py-1"
+              value={rules.keyword ?? ''}
+              placeholder="文件名或标签包含"
+              onChange={(e) => patch({ keyword: e.target.value.trim() || undefined })}
+            />
+          </label>
+          <label className="flex items-center gap-1.5">
+            大小
+            <input
+              type="number"
+              min={0}
+              className="field !w-20 !py-1"
+              value={rules.minSizeMB ?? ''}
+              placeholder="≥ MB"
+              onChange={(e) =>
+                patch({
+                  minSizeMB: Number(e.target.value) > 0 ? Number(e.target.value) : undefined
+                })
+              }
+            />
+            ~
+            <input
+              type="number"
+              min={0}
+              className="field !w-20 !py-1"
+              value={rules.maxSizeMB ?? ''}
+              placeholder="≤ MB"
+              onChange={(e) =>
+                patch({
+                  maxSizeMB: Number(e.target.value) > 0 ? Number(e.target.value) : undefined
+                })
+              }
+            />
+          </label>
+        </div>
+
         <div className="flex items-center justify-between border-t border-neutral-200 pt-3 dark:border-neutral-800">
           <span className="text-xs text-neutral-400">
             {count === null ? '计算中…' : `当前规则匹配 ${count} 张图片`}
@@ -316,7 +361,11 @@ export function AlbumEditorModal({
             <button className="btn-ghost" onClick={onClose}>
               取消
             </button>
-            <button className="btn-primary" disabled={!name.trim()} onClick={() => void save()}>
+            <button
+              className="btn-primary"
+              disabled={!name.trim() || busy}
+              onClick={() => void save()}
+            >
               <Sparkles size={14} />
               {editing ? '保存' : '创建'}
             </button>

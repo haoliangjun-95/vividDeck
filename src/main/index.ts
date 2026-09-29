@@ -216,6 +216,10 @@ function createAppMenu(): void {
       label: 'vividDeck',
       submenu: [
         { role: 'about', label: '关于 vividDeck' },
+        {
+          label: '检查更新…',
+          click: () => void import('./services/updater').then((m) => m.checkForUpdatesManually())
+        },
         { type: 'separator' },
         { role: 'hide', label: '隐藏' },
         { role: 'unhide', label: '显示全部' },
@@ -309,6 +313,10 @@ app.whenReady().then(async () => {
   // 桌面悬浮球（点击切换壁纸）；托盘菜单随其开关状态重建
   s.bubble.initBubble(rebuildTrayMenu)
   s.bubble.onBubbleOpenMain(showMainWindow)
+  // 自动更新（发布构建：启动延迟检查；Windows 全自动 / macOS 引导下载）
+  void import('./services/updater')
+    .then((m) => m.initUpdater())
+    .catch((err) => console.error('[updater] 初始化失败:', err))
 
   app.on('activate', () => {
     // macOS 点击 Dock 图标重新显示窗口

@@ -433,9 +433,15 @@ export async function ensureLocal(imageId: string): Promise<string> {
 }
 
 /** 批量下载（离线准备；并发 3、可取消） */
+/** 下载批次互斥：同一时刻只允许一个 downloadScope（见下方注释） */
+let downloading = false
+
 export async function downloadScope(
   scope: SyncDownloadScope
 ): Promise<{ downloaded: number; failed: number; cancelled?: boolean }> {
+  // 并发互斥：旧实现每次调用复位全局取消标志——设置页"全部下载"与画廊
+  // "下载原图"并发时，后到者会复活前者的取消。这里直接拒绝并发批次。
+  if (downloading) throw new Error('已有下载任务进行中，请等待完成或先取消')
   const idSet = scope.type === 'ids' ? new Set(scope.ids ?? []) : null
   const images = getLibrary().images.filter((img) => {
     if (img.localFile) return false
@@ -444,26 +450,31 @@ export async function downloadScope(
     if (scope.type === 'category') return img.categoryId === scope.categoryId
     return true
   })
+  downloading = true
   let downloaded = 0
   let failed = 0
   downloadCancelled = false
-  progress({ phase: 'downloading', current: 0, total: images.length, message: '批量下载原图…' })
-  await runPool(images, 3, async (img) => {
-    if (downloadCancelled) return
-    try {
-      await ensureLocal(img.id)
-      downloaded++
-    } catch {
-      failed++
-    }
-    progress({
-      phase: 'downloading',
-      current: downloaded + failed,
-      total: images.length,
-      message: `下载 ${downloaded + failed}/${images.length}`
+  try {
+    progress({ phase: 'downloading', current: 0, total: images.length, message: '批量下载原图…' })
+    await runPool(images, 3, async (img) => {
+      if (downloadCancelled) return
+      try {
+        await ensureLocal(img.id)
+        downloaded++
+      } catch {
+        failed++
+      }
+      progress({
+        phase: 'downloading',
+        current: downloaded + failed,
+        total: images.length,
+        message: `下载 ${downloaded + failed}/${images.length}`
+      })
     })
-  })
-  return { downloaded, failed, cancelled: downloadCancelled }
+    return { downloaded, failed, cancelled: downloadCancelled }
+  } finally {
+    downloading = false
+  }
 }
 
 /** 引擎初始化：注册变更防抖 + 启动时同步 */

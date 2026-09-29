@@ -9,6 +9,14 @@ directories:
   output: dist
   buildResources: build
 
+# 自动更新发布源（GitHub Releases；仓库 public）
+# 推 v* tag 触发 .github/workflows/release.yml 自动构建上传，
+# 应用内 electron-updater 据此检查/下载（Windows 全自动 / macOS 引导下载）
+publish:
+  provider: github
+  owner: haoliangjun-95
+  repo: vividDeck
+
 # 打包后、rcedit 改 PE 资源前等待杀毒实时扫描释放 exe（Windows 专用，见脚本头部说明）
 afterPack: scripts/after-pack.cjs
 

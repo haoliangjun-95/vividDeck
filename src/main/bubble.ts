@@ -5,16 +5,20 @@
  * - 位置持久化 + 屏幕边界钳制（显示器分辨率/数量变化自动拉回可见区域）
  * - macOS 跨空间（全屏空间除外）常驻
  */
-import { BrowserWindow, Menu, screen, ipcMain } from 'electron'
+import { BrowserWindow, Menu, app, screen, ipcMain } from 'electron'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
 import { JsonStore } from './services/store'
 import { getSettings, updateSettings } from './services/settings'
 import { listHistory } from './services/history'
 import { nextSlideshowNow } from './services/slideshow'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+/**
+ * out/ 产物根：本模块经动态 import 加载，electron-vite 会把它切进
+ * out/main/chunks/——import.meta.url 的相对路径（../preload 等）不再指向 out/main。
+ * 统一从 app 根解析（dev = 项目根；打包 = asar 根），与 chunk 位置解耦。
+ */
+const outRoot = (): string => path.join(app.getAppPath(), 'out')
 
 /** 窗口尺寸（含阴影留白） */
 const SIZE = 76
@@ -103,7 +107,7 @@ function createBubbleWindow(): void {
     show: false,
     hasShadow: false,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.mjs'),
+      preload: path.join(outRoot(), 'preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -128,7 +132,7 @@ function createBubbleWindow(): void {
     // 开发模式：dev server 多页面路由（vite 多入口为 bubble.html）
     void bubbleWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}/bubble.html`)
   } else {
-    void bubbleWindow.loadFile(path.join(__dirname, '../renderer/bubble.html'))
+    void bubbleWindow.loadFile(path.join(outRoot(), 'renderer/bubble.html'))
   }
 
   bubbleWindow.webContents.on('before-input-event', (event, input) => {
