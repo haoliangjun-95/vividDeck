@@ -1,6 +1,7 @@
 /**
  * 画廊虚拟滚动纯数学（自 GalleryGrid 提取，清单 #12 可单测）
- * 列数断点与 CSS grid（grid-cols-2/3/4/5/6）保持一致。
+ * 列数按容器实测宽度计算（渲染层由内联 gridTemplateColumns 应用，
+ * 无需与任何 CSS 断点类保持一致）。
  * 所有函数无副作用，输入输出均为普通数值，可直接断言。
  */
 
@@ -45,7 +46,7 @@ export interface VirtualWindowResult {
   spacerBottom: number
 }
 
-/** 视口宽度 → 列数（断点与 CSS sm/lg/xl/2xl 对应） */
+/** 视口宽度 → 列数（最小卡片宽 180px 递增；与渲染层的内联列数计算同源） */
 export function columnsForWidth(viewportW: number): number {
   return viewportW >= 1536
     ? 6
@@ -66,7 +67,7 @@ export function computeVirtualWindow({
 }: VirtualWindowInput): VirtualWindowResult {
   const cols = columnsForWidth(viewport.w)
   const colW = (viewport.w - GRID_PAD * 2 - GRID_GAP * (cols - 1)) / cols
-  const rowH = (colW * 3) / 4 + CARD_FOOTER + 1 /* ring 边距 */
+  const rowH = (colW * 3) / 4 + CARD_FOOTER
   const totalRows = Math.ceil(itemCount / cols)
   const firstRow = Math.max(
     0,

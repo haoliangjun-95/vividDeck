@@ -30,7 +30,8 @@ export const IPC = {
   LIBRARY_MERGE_TAGS: 'library:mergeTags', // { sources, into } -> { merged }
   LIBRARY_DELETE_TAG: 'library:deleteTag', // { tag } -> { removed }
   LIBRARY_BACKFILL_TAKEN_AT: 'library:backfillTakenAt',
-  APP_SET_WATCH_FOLDERS: 'app:setWatchFolders', // { folders } -> AppSettings（重建监视器） // {} -> { scanned, updated }（为本地图回填 EXIF 拍摄时间）
+  APP_SET_WATCH_FOLDERS: 'app:setWatchFolders', // { folders } -> AppSettings（重建监视器）
+  APP_SET_GLOBAL_SHORTCUT: 'app:setGlobalShortcut', // { enabled } -> AppSettings（注册/注销全局快捷键） // {} -> { scanned, updated }（为本地图回填 EXIF 拍摄时间）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData

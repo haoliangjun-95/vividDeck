@@ -63,6 +63,9 @@ export function SettingsPanel(): JSX.Element {
     if (patch.watchFolders !== undefined) {
       setSettings(await window.api.setWatchFolders(patch.watchFolders))
     }
+    if (patch.globalShortcutEnabled !== undefined) {
+      setSettings(await window.api.setGlobalShortcut(patch.globalShortcutEnabled))
+    }
   }
 
   /** 添加监视文件夹（复用导入目录选择对话框）；重复目录自动去重 */
@@ -368,6 +371,34 @@ export function SettingsPanel(): JSX.Element {
           <FolderOpen size={13} />
           添加监视文件夹
         </button>
+      </section>
+
+      {/* 全局快捷键 */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-medium">全局快捷键</div>
+            <p className="mt-0.5 text-xs text-neutral-400">
+              ⌥ + ⌘/Ctrl + → 切换下一张壁纸（应用不在前台也生效，默认关闭）
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={settings.globalShortcutEnabled}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+              settings.globalShortcutEnabled
+                ? 'bg-indigo-600'
+                : 'bg-neutral-300 dark:bg-neutral-700'
+            }`}
+            onClick={() => void update({ globalShortcutEnabled: !settings.globalShortcutEnabled })}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                settings.globalShortcutEnabled ? 'left-[22px]' : 'left-0.5'
+              }`}
+            />
+          </button>
+        </div>
       </section>
 
       {/* 桌面悬浮球 */}

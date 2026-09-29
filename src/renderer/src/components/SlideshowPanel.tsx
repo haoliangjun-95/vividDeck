@@ -26,6 +26,21 @@ export function SlideshowPanel(): JSX.Element {
   const images = useLibraryStore((s) => s.images)
   const [config, setConfig] = useState<SlideshowConfig | null>(null)
   const [monitors, setMonitors] = useState<MonitorInfo[]>([])
+  // 每屏卡片共用的秒级时钟与壁纸历史（此前 N 屏 = N 份 interval + N 份全量 IPC）
+  const [now, setNow] = useState(Date.now())
+  const [history, setHistory] = useState<{ imageId: string; monitorIds: string[] }[]>([])
+  useEffect(() => {
+    void window.api.listHistory().then((h) => setHistory(h as never))
+    const off = window.api.onSlideshowTick(() => {
+      void window.api.listHistory().then((h) => setHistory(h as never))
+      setNow(Date.now())
+    })
+    return off
+  }, [])
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
 
   useEffect(() => {
     void window.api.getSlideshow().then(setConfig)
@@ -317,7 +332,14 @@ export function SlideshowPanel(): JSX.Element {
         )}
         {config.independentMonitors && monitors.length > 1
           ? monitors.map((m) => (
-              <MonitorCard key={m.id} monitor={m} config={config} onPatch={(p) => void patch(p)} />
+              <MonitorCard
+                key={m.id}
+                monitor={m}
+                config={config}
+                onPatch={(p) => void patch(p)}
+                now={now}
+                history={history}
+              />
             ))
           : monitors.map((m) => {
               const active = config.monitorIds.includes(m.id)
@@ -399,18 +421,22 @@ function poolSizeOfScope(
 function MonitorCard({
   monitor,
   config,
-  onPatch
+  onPatch,
+  now,
+  history
 }: {
   monitor: MonitorInfo
   config: SlideshowConfig
   onPatch: (p: Partial<SlideshowConfig>) => void
+  /** 父组件统一的秒级时钟（倒计时刷新；此前每卡各挂 1s interval） */
+  now: number
+  /** 父组件统一拉取的壁纸历史（此前每卡各全量 listHistory IPC） */
+  history: { imageId: string; monitorIds: string[] }[]
 }): JSX.Element {
   const categories = useLibraryStore((st) => st.categories)
   const albums = useLibraryStore((st) => st.albums)
   const images = useLibraryStore((st) => st.images)
-  const [history, setHistory] = useState<{ imageId: string; monitorIds: string[] }[]>([])
   const [expanded, setExpanded] = useState(false)
-  const [now, setNow] = useState(Date.now())
 
   const o = config.monitorOverrides?.[monitor.id] ?? {}
   const eff = {
@@ -427,18 +453,7 @@ function MonitorCard({
   const nextAt = lastAt + intervalMsVal
   const remainMs = nextAt - now
 
-  useEffect(() => {
-    void window.api.listHistory().then((h) => setHistory(h as never))
-    const off = window.api.onSlideshowTick(() => {
-      void window.api.listHistory().then((h) => setHistory(h as never))
-      setNow(Date.now())
-    })
-    return off
-  }, [])
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  // now/history 由父组件统一驱动
 
   const currentEntry = history.find((h) => h.monitorIds.includes(monitor.id))
   const currentImg = currentEntry ? images.find((i) => i.id === currentEntry.imageId) : undefined

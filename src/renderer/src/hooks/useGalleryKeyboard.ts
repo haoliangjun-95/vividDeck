@@ -40,10 +40,11 @@ export function useGalleryKeyboard({
 }: GalleryKeyboardInput): [number | null, (value: number | null) => void] {
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
 
-  // 列表缩小（筛选/删除）后钳制活动索引，避免指向不存在的卡片
+  // 列表缩小（筛选/删除）后钳制活动索引，避免指向不存在的卡片；
+  // 归零时置 null——否则列表恢复后第一张会凭空带活动 ring（用户并未按键）
   useEffect(() => {
     setActiveIndex((prev) =>
-      prev !== null && prev >= itemCount ? Math.max(0, itemCount - 1) : prev
+      prev === null ? null : itemCount === 0 ? null : prev >= itemCount ? itemCount - 1 : prev
     )
   }, [itemCount])
 

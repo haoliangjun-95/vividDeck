@@ -19,7 +19,7 @@ import {
 } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { initLogger, installCrashHandlers } from './services/logger'
+import { initLogger, installCrashHandlers, setCrashFlush } from './services/logger'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -265,6 +265,8 @@ function createAppMenu(): void {
 // ---------- 生命周期 ----------
 app.whenReady().then(async () => {
   const s = await loadServices()
+  // 崩溃兜底：uncaughtException 时同步 flush 素材库（防抖窗口内变更不丢）
+  setCrashFlush(() => s.library.flushLibrary())
   // 自定义存储目录不可用（如外置磁盘未挂载）：明确报错退出，
   // 避免回退默认目录后把"空库"覆盖写回，造成数据"消失"的错觉
   if (s.paths.customStorageDirMissing()) {
@@ -313,6 +315,10 @@ app.whenReady().then(async () => {
   // 桌面悬浮球（点击切换壁纸）；托盘菜单随其开关状态重建
   s.bubble.initBubble(rebuildTrayMenu)
   s.bubble.onBubbleOpenMain(showMainWindow)
+  // 全局快捷键（设置页开关；默认关）
+  void import('./services/shortcuts')
+    .then((m) => m.initShortcuts(s.settings.getSettings().globalShortcutEnabled))
+    .catch((err) => console.error('[shortcuts] 初始化失败:', err))
   // 自动更新（发布构建：启动延迟检查；Windows 全自动 / macOS 引导下载）
   void import('./services/updater')
     .then((m) => m.initUpdater())

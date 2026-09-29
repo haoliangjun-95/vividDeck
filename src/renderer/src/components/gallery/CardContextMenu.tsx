@@ -101,13 +101,18 @@ export function CardContextMenu({
     }
   }
 
-  // Esc 关闭（键盘可达性；此前菜单只能点空白处关闭，Esc 反而会触发画廊的其他退出动作）
+  // Esc / 窗口失焦关闭（此前只能点空白处；失焦后菜单悬空挡不住任何点击目标）
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
+    const onBlur = (): void => onClose()
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [onClose])
 
   // 菜单宽度固定（w-52 = 208px）；高度随分类/标签数量变化——旧的 430px 估值在

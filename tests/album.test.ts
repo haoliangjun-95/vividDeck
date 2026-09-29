@@ -156,6 +156,26 @@ describe('matchAlbum 关键词与大小', () => {
   })
 })
 
+describe('matchAlbum 相对日期（takenWithinDays）', () => {
+  const DAY = 86_400_000
+  it('窗口内命中、窗口外不命中、无拍摄时间不命中', () => {
+    const a = album({ takenWithinDays: 30 })
+    expect(matchAlbum(img({ takenAt: Date.now() - 29 * DAY }), a)).toBe(true)
+    expect(matchAlbum(img({ takenAt: Date.now() - 31 * DAY }), a)).toBe(false)
+    expect(matchAlbum(img({ takenAt: null }), a)).toBe(false)
+  })
+
+  it('与绝对范围 AND 叠加（两者都满足才命中）', () => {
+    const a = album({ takenWithinDays: 7, takenFrom: 1000 })
+    // 3 天前拍摄：相对窗口命中；绝对下限 1000（1970 年）也满足
+    expect(matchAlbum(img({ takenAt: Date.now() - 3 * DAY }), a)).toBe(true)
+  })
+
+  it('未设置或非正值不参与过滤', () => {
+    expect(matchAlbum(img({ takenAt: null }), album({}))).toBe(true)
+  })
+})
+
 describe('matchAlbums', () => {
   it('返回全部命中的相册 id', () => {
     const albums = [

@@ -220,6 +220,24 @@ describe('LibraryDbStore：与 JsonStore 同接口的 SQLite 存储', () => {
   })
 })
 
+describe('checkpoint：WAL 折叠（存储目录迁移的自包含保证）', () => {
+  it('checkpoint 后仅复制主 db 文件即可完整打开（WAL 未折叠时副本会丢数据）', () => {
+    store = new LibraryDbStore(dbFile, EMPTY)
+    const data = sampleData()
+    store.replace(data)
+    store.flush() // 事务提交进 -wal（未 checkpoint）
+    store.checkpoint()
+    // 整目录复制场景的等价验证：只带走主 db 文件
+    const copy = path.join(tmpDir, 'copy-only-main.db')
+    fs.copyFileSync(dbFile, copy)
+    const reopened = openLibraryDb(copy)
+    const loaded = loadLibraryData(reopened)
+    expect(loaded.images).toHaveLength(2)
+    expect(loaded.categories.map((c) => c.id)).toContain('cat-1')
+    reopened.close()
+  })
+})
+
 describe('snapshotIfDue：周期快照与轮换', () => {
   let backupDir: string
 

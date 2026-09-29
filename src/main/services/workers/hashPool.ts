@@ -102,6 +102,11 @@ export async function hashFilesParallel(
       })
       // worker 线程自身崩溃（非单文件错误）属基础设施故障：整批失败
       worker.on('error', (err) => finish(err))
+      // 被外部杀死等非 error 退出：in-flight 消息永无回音，同样按整批失败兜底
+      // （finish 内部先置 settled 再 terminate，正常收尾的退出事件会被吞掉）
+      worker.on('exit', (code) => {
+        if (!settled) finish(new Error(`hash worker 非正常退出 (code=${code})`))
+      })
       worker.postMessage(files[next++])
     }
 

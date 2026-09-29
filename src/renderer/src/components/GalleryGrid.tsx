@@ -4,7 +4,7 @@
  * 子组件见 ./gallery/：ImageCard（含 CardInfoFooter）、CardContextMenu、RenameModal、
  * BatchActionBar、BatchTagModal、BatchCategoryModal、DeleteConfirmModal。
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CloudDownload } from 'lucide-react'
 import { selectFilteredImages, useLibraryStore } from '../store/library'
 import { useUIStore } from '../store/ui'
@@ -179,6 +179,11 @@ export function GalleryGrid(): JSX.Element {
   // 空态分支不渲染滚动容器；容器出现/消失时必须重挂监听——
   // 否则空态挂载（首次安装/筛选清空）后导入图片，滚动与尺寸监听永久丢失，虚拟滚动失效
   const gridVisible = !(loaded && images.length === 0)
+  // 首帧同步测量（绘制前）：默认 viewport 1200 宽会让首帧按错误列数渲染后跳变
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el) setViewport({ w: el.clientWidth, h: el.clientHeight })
+  }, [gridVisible])
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -245,6 +250,8 @@ export function GalleryGrid(): JSX.Element {
       <div style={{ height: win.spacerTop }} />
       {/* 列数由内联 gridTemplateColumns 按容器实测宽度计算（与 computeVirtualWindow 的 cols 一致），无需响应式类 */}
       <div
+        role="grid"
+        aria-label="图片画廊"
         className="grid gap-3"
         style={{ gridTemplateColumns: `repeat(${win.cols}, minmax(0, 1fr))` }}
       >

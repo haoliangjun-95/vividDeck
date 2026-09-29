@@ -287,6 +287,24 @@ export function AlbumEditorModal({
               </button>
             )}
           </label>
+          <label className="flex items-center gap-1.5">
+            最近
+            <select
+              className="field !py-1"
+              value={rules.takenWithinDays ?? 0}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                patch({ takenWithinDays: v > 0 ? v : undefined })
+              }}
+            >
+              <option value={0}>不限</option>
+              <option value={7}>7 天</option>
+              <option value={30}>30 天</option>
+              <option value={90}>90 天</option>
+              <option value={365}>1 年</option>
+            </select>
+            内拍摄
+          </label>
         </div>
 
         {/* 关键词 + 文件大小（“存为相册”入口带进来的条件，可继续编辑） */}

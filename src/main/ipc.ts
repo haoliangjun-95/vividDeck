@@ -125,6 +125,11 @@ export function registerIpcHandlers(): void {
   })
 
   handle(IPC.APP_SET_IMPORT_MODE, (mode) => updateSettings({ importMode: mode }))
+  handle(IPC.APP_SET_GLOBAL_SHORTCUT, (payload) => {
+    const after = updateSettings({ globalShortcutEnabled: payload.enabled === true })
+    void import('./services/shortcuts').then((m) => m.initShortcuts(after.globalShortcutEnabled))
+    return after
+  })
   handle(IPC.APP_SET_WATCH_FOLDERS, (payload) => {
     const folders = (Array.isArray(payload.folders) ? payload.folders : []).filter(
       (f): f is string => typeof f === 'string' && f.length > 0

@@ -42,9 +42,10 @@ const LOG_MAX_SIZE = 10 * 1024 * 1024
 /** 字符串模式脱敏 */
 function redactText(text: string): string {
   let out = text
-    // key=value / key: value 形式的凭据（JSON、查询串、拼接日志均可命中）
+    // key=value / key: value 形式的凭据（JSON、查询串、拼接日志均可命中）。
+    // 词边界防误伤：monkey=banana 不该因子串 "key" 被遮蔽
     .replace(
-      /((?:access|secret|api)?[-_]?key|secret|password|passwd|token|authorization)(['"]?\s*[:=]\s*)(['"]?)[^\s"',;)}\]]+/gi,
+      /\b((?:access|secret|api)[-_]?key|secret|password|passwd|token|authorization)(['"]?\s*[:=]\s*)(['"]?)[^\s"',;)}\]]+/gi,
       '$1$2$3***'
     )
     // URL 中的 user:pass@
@@ -116,8 +117,13 @@ export function initLogger(): void {
     message.data = message.data.map(redactValue)
     return message
   })
-  // 捕获既有 console.*（engine/library/slideshow 等无需改动即落盘）
-  Object.assign(console, log.functions)
+  // 捕获既有 console.*（engine/library/slideshow 等无需改动即落盘）；
+  // 逐方法覆盖，保留 log.functions 未提供的 trace/dir 等
+  for (const [name, fn] of Object.entries(log.functions)) {
+    const key = name as keyof Console
+    const target = console as unknown as Record<string, unknown>
+    if (typeof fn === 'function') target[key] = fn
+  }
   log.info(
     `[logger] vividDeck v${app.getVersion()} 启动，electron ${process.versions.electron}，` +
       `平台 ${process.platform}，日志：${logFilePath()}`
@@ -128,10 +134,23 @@ export function initLogger(): void {
 /** 渲染进程崩溃计数（防止崩溃循环时无限重载） */
 const renderCrashCounts = new Map<number, number>()
 
+/** 崩溃前的 best-effort 落盘钩子（index.ts 在服务加载后注册 flushLibrary；
+ *  logger 不能静态依赖 library——会破坏薄 bootstrap 的加载顺序） */
+let crashFlush: (() => void) | null = null
+export function setCrashFlush(fn: (() => void) | null): void {
+  crashFlush = fn
+}
+
 /** 安装主进程崩溃兜底 handler（此前全无） */
 export function installCrashHandlers(): void {
   process.on('uncaughtException', (err) => {
     log.error('[crash] 主进程未捕获异常:', err)
+    // 防抖窗口（300ms）内的库变更 best-effort 落盘（同步调用，失败忽略）
+    try {
+      crashFlush?.()
+    } catch {
+      /* 崩溃路径尽力而为 */
+    }
     dialog.showErrorBox(
       'vividDeck 遇到错误',
       '主进程发生未捕获异常，应用即将退出。\n' +

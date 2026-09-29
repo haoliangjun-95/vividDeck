@@ -226,6 +226,11 @@ export interface IpcContract extends Record<IpcChannelName, IpcChannelDef> {
     [payload: { folders: string[] }],
     AppSettings
   >
+  [IPC.APP_SET_GLOBAL_SHORTCUT]: IpcChannelDef<
+    'envelope',
+    [payload: { enabled: boolean }],
+    AppSettings
+  >
   [IPC.SYNC_FIND_SIMILAR]: IpcChannelDef<
     'envelope',
     [],

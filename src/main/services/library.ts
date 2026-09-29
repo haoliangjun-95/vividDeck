@@ -29,7 +29,7 @@ import {
   sanitizeIdSegment,
   splitFileName
 } from '../utils/fs'
-import { readTakenAt } from '../utils/exif'
+import { readExifInfo, readTakenAt } from '../utils/exif'
 import { runPool } from '../utils/concurrency'
 import { dataDir, isRealFile, libraryDir, storageRoot, trashStagingDir } from './paths'
 import { ensureThumb, purgeCache } from './thumbnails'
@@ -38,7 +38,7 @@ import { getDeviceId } from './device'
 import { matchAlbum } from '@shared/album'
 import { normalizeTagName, rewriteAlbumsForTag } from '@shared/tagOps'
 import { addTombstone, removeTombstones } from './tombstones'
-import type { SyncImageRecord } from '@shared/types'
+import type { ExifInfo, SyncImageRecord } from '@shared/types'
 
 // ---------- 持久化（A5：SQLite，首次启动自动迁移旧 library.json 并保留 .migrated 备份） ----------
 const libraryStore = new LibraryDbStore(
@@ -238,7 +238,8 @@ async function buildImageRecord(
     height: meta.height ?? 0,
     sizeBytes: stat.size,
     format,
-    takenAt: readTakenAt(meta.exif)
+    takenAt: readTakenAt(meta.exif),
+    exif: readExifInfo(meta.exif)
   }
 }
 
@@ -809,6 +810,7 @@ export function toSyncRecord(img: ImageItem): SyncImageRecord {
     sizeBytes: img.sizeBytes,
     format: img.format,
     takenAt: img.takenAt ?? null,
+    exif: img.exif ?? null,
     categoryId: img.categoryId,
     tags: img.tags,
     favorite: img.favorite,
@@ -846,12 +848,15 @@ export async function backfillTakenAt(): Promise<{ scanned: number; updated: num
     (img) => (img.takenAt ?? null) === null && img.localFile && isRealFile(img.path)
   )
   if (targets.length === 0) return { scanned: 0, updated: 0 }
-  const found = new Map<string, number>()
+  const found = new Map<string, { takenAt?: number; exif?: ExifInfo | null }>()
   await runPool(targets, 4, async (img) => {
     try {
       const meta = await sharp(img.path).metadata()
       const takenAt = readTakenAt(meta.exif)
-      if (takenAt !== null) found.set(img.id, takenAt)
+      const exif = readExifInfo(meta.exif)
+      if (takenAt !== null || exif !== null) {
+        found.set(img.id, { takenAt: takenAt ?? undefined, exif: exif ?? undefined })
+      }
     } catch {
       /* 单文件解码失败跳过（断链类问题归体检管） */
     }
@@ -859,9 +864,10 @@ export async function backfillTakenAt(): Promise<{ scanned: number; updated: num
   if (found.size > 0) {
     commit((data) => {
       for (const img of data.images) {
-        const takenAt = found.get(img.id)
-        if (takenAt !== undefined) {
-          img.takenAt = takenAt
+        const hit = found.get(img.id)
+        if (hit !== undefined) {
+          if (hit.takenAt !== undefined) img.takenAt = hit.takenAt
+          if (hit.exif !== undefined) img.exif = hit.exif
           stamp(img)
         }
       }

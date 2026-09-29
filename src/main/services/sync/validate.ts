@@ -11,6 +11,7 @@
  */
 import type {
   Category,
+  ExifInfo,
   ImageFormat,
   SmartAlbum,
   SmartAlbumRules,
@@ -65,6 +66,21 @@ function sanitizeTags(v: unknown): string[] {
     .slice(0, MAX_TAGS)
 }
 
+/** 净化拍摄参数：逐字段类型/限长校验，全空返回 null */
+function sanitizeExif(raw: unknown): ExifInfo | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const e = raw as Record<string, unknown>
+  const out: ExifInfo = {}
+  if (typeof e.make === 'string' && e.make.length <= 40) out.make = e.make
+  if (typeof e.model === 'string' && e.model.length <= 60) out.model = e.model
+  const nums = ['fNumber', 'exposure', 'iso', 'focal'] as const
+  for (const k of nums) {
+    const v = e[k]
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = v
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 /** 净化单条图片记录；id/hash 非法返回 null（调用方丢弃） */
 function sanitizeRecord(raw: unknown, key: string): SyncImageRecord | null {
   if (typeof raw !== 'object' || raw === null) return null
@@ -86,6 +102,7 @@ function sanitizeRecord(raw: unknown, key: string): SyncImageRecord | null {
       typeof r.takenAt === 'number' && Number.isFinite(r.takenAt) && r.takenAt > 0
         ? Math.round(r.takenAt)
         : null,
+    exif: sanitizeExif(r.exif),
     categoryId: validId(r.categoryId) ? r.categoryId : null,
     tags: sanitizeTags(r.tags),
     favorite: r.favorite === true,
@@ -148,6 +165,13 @@ function sanitizeRules(raw: unknown): SmartAlbumRules {
   }
   if (typeof r.maxSizeMB === 'number' && Number.isFinite(r.maxSizeMB) && r.maxSizeMB > 0) {
     rules.maxSizeMB = r.maxSizeMB
+  }
+  if (
+    typeof r.takenWithinDays === 'number' &&
+    Number.isFinite(r.takenWithinDays) &&
+    r.takenWithinDays > 0
+  ) {
+    rules.takenWithinDays = Math.round(r.takenWithinDays)
   }
   return rules
 }

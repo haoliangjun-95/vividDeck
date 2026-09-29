@@ -59,6 +59,8 @@ interface UIState {
 }
 
 let toastSeq = 1
+/** toast 自动消失定时器（dismissToast 时清理，避免已关提示的定时器空跑） */
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
 export const useUIStore = create<UIState>()(
   persist(
@@ -99,7 +101,10 @@ export const useUIStore = create<UIState>()(
             { id, message, type, action: opts?.action, duration: opts?.duration }
           ]
         })
-        setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
+        toastTimers.set(
+          id,
+          setTimeout(() => get().dismissToast(id), opts?.duration ?? 3000)
+        )
       },
       undoStack: [],
       pushUndo: (label, undo) =>
@@ -110,7 +115,14 @@ export const useUIStore = create<UIState>()(
         if (last) set({ undoStack: stack.slice(0, -1) })
         return last
       },
-      dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
+      dismissToast: (id) => {
+        const timer = toastTimers.get(id)
+        if (timer) {
+          clearTimeout(timer)
+          toastTimers.delete(id)
+        }
+        set({ toasts: get().toasts.filter((t) => t.id !== id) })
+      },
       setDarkMode: (dark) => set({ darkMode: dark })
     }),
     {

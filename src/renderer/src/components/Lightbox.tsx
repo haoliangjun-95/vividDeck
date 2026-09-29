@@ -36,15 +36,24 @@ function Viewer({ imageId, onNav }: { imageId: string; onNav: (delta: number) =>
     setFallbackOriginal(false)
   }, [imageId])
 
-  const onWheel = (e: React.WheelEvent): void => {
-    e.preventDefault()
-    setScale((s) => Math.min(6, Math.max(0.2, s * (e.deltaY < 0 ? 1.12 : 0.89))))
-  }
+  // 滚轮缩放：React 的 onWheel 挂的是 passive 监听，preventDefault 无效
+  // （页面仍会滚动）——改为 ref 上手动挂 { passive: false }
+  const stageRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      setScale((s) => Math.min(6, Math.max(0.2, s * (e.deltaY < 0 ? 1.12 : 0.89))))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   return (
     <div
+      ref={stageRef}
       className="relative flex-1 overflow-hidden"
-      onWheel={onWheel}
       onMouseDown={(e) => {
         dragRef.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y }
       }}
@@ -167,6 +176,7 @@ function InfoPanel({ imageId }: { imageId: string }) {
           ['文件大小', formatBytes(image.sizeBytes)],
           ['格式', formatLabel(image.format)],
           ...(image.takenAt ? [['拍摄时间', formatTime(image.takenAt)] as [string, string]] : []),
+          ...formatExifSummary(image.exif ?? {}),
           [
             '分类',
             image.categoryId
@@ -237,6 +247,34 @@ function InfoPanel({ imageId }: { imageId: string }) {
 }
 
 /** 灯箱外壳（含顶部操作条） */
+/** EXIF 拍摄参数摘要：一行相机、一行参数（缺失字段自动跳过） */
+function formatExifSummary(exif: {
+  make?: string
+  model?: string
+  fNumber?: number
+  exposure?: number
+  iso?: number
+  focal?: number
+}): [string, string][] {
+  const rows: [string, string][] = []
+  const camera = [exif.make, exif.model].filter(Boolean).join(' ')
+  if (camera) rows.push(['相机', camera])
+  const parts: string[] = []
+  if (exif.fNumber) parts.push(`f/${exif.fNumber}`)
+  if (exif.exposure) parts.push(exposureLabel(exif.exposure))
+  if (exif.iso) parts.push(`ISO ${exif.iso}`)
+  if (exif.focal) parts.push(`${exif.focal}mm`)
+  if (parts.length > 0) rows.push(['参数', parts.join(' · ')])
+  return rows
+}
+
+/** 快门速度展示：≥1s 保留原值，<1s 显示分数（0.004 → 1/250） */
+function exposureLabel(sec: number): string {
+  if (sec >= 1) return `${sec}s`
+  const denom = Math.round(1 / sec)
+  return `1/${denom}s`
+}
+
 export function Lightbox(): JSX.Element | null {
   const imageId = useUIStore((s) => s.lightboxImageId)
   const close = useUIStore((s) => s.closeLightbox)

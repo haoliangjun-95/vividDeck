@@ -43,6 +43,8 @@ export const ImageCard = React.memo(function ImageCard({
 
   return (
     <div
+      role="gridcell"
+      aria-selected={selected}
       className={`group relative cursor-pointer overflow-hidden rounded-xl bg-neutral-100 shadow-sm ring-1 transition-shadow hover:shadow-lg dark:bg-neutral-900 ${
         selectionMode && selected
           ? 'ring-2 ring-indigo-500'

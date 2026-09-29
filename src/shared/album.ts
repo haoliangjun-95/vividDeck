@@ -50,6 +50,11 @@ export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
     if (r.takenFrom !== undefined && img.takenAt < r.takenFrom) return false
     if (r.takenTo !== undefined && img.takenAt > r.takenTo) return false
   }
+  // 相对日期：最近 N 天内拍摄（按匹配时刻计算，"最近 30 天"类相册无需逐年手改）
+  if (r.takenWithinDays !== undefined && r.takenWithinDays > 0) {
+    if (img.takenAt === null || img.takenAt === undefined) return false
+    if (img.takenAt < Date.now() - r.takenWithinDays * 86_400_000) return false
+  }
   if (r.orientation) {
     const landscape = img.width >= img.height
     if (r.orientation === 'landscape' && !landscape) return false

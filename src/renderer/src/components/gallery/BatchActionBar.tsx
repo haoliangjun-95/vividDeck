@@ -48,7 +48,8 @@ export function BatchActionBar({
   const allFilteredSelected = images.length > 0 && selectedIds.length >= images.length
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-white/95 px-4 py-2.5 shadow-2xl ring-1 ring-black/5 backdrop-blur dark:bg-neutral-800/95 dark:ring-white/10">
+    // bottom-16：避开同轴的 ToastHost（bottom-6），批量操作期间 toast 不再盖住按钮
+    <div className="fixed bottom-16 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-white/95 px-4 py-2.5 shadow-2xl ring-1 ring-black/5 backdrop-blur dark:bg-neutral-800/95 dark:ring-white/10">
       <span className="mr-1 text-sm font-semibold tabular-nums">已选 {selectedIds.length} 张</span>
       <button
         className="btn-ghost !py-1 text-xs"

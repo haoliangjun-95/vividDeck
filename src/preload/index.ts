@@ -98,6 +98,7 @@ const api = {
   deleteTag: (tag: string) => call(IPC.LIBRARY_DELETE_TAG, { tag }),
   backfillTakenAt: () => call(IPC.LIBRARY_BACKFILL_TAKEN_AT),
   setWatchFolders: (folders: string[]) => call(IPC.APP_SET_WATCH_FOLDERS, { folders }),
+  setGlobalShortcut: (enabled: boolean) => call(IPC.APP_SET_GLOBAL_SHORTCUT, { enabled }),
   addCategory: (name: string) => call(IPC.LIBRARY_ADD_CATEGORY, { name }),
   renameCategory: (id: string, name: string) => call(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
   deleteCategory: (id: string) => call(IPC.LIBRARY_DELETE_CATEGORY, { id }),

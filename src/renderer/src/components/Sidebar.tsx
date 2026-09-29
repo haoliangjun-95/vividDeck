@@ -137,7 +137,7 @@ export function Sidebar(): JSX.Element {
   const [tagModal, setTagModal] = useState<{ mode: 'rename' | 'merge'; tag: string } | null>(null)
   const deleteTagAction = useLibraryStore((s) => s.deleteTag)
 
-  // Esc 关闭相册/标签右键菜单
+  // Esc / 窗口失焦关闭相册/标签右键菜单
   useEffect(() => {
     if (!albumMenu && !tagMenu) return
     const onKey = (e: KeyboardEvent): void => {
@@ -146,8 +146,16 @@ export function Sidebar(): JSX.Element {
         setTagMenu(null)
       }
     }
+    const onBlur = (): void => {
+      setAlbumMenu(null)
+      setTagMenu(null)
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [albumMenu, tagMenu])
 
   const confirmDeleteAlbum = (album: SmartAlbum): void => {

@@ -27,6 +27,8 @@ export interface ImageItem {
   format: ImageFormat
   /** 拍摄时间（EXIF DateTimeOriginal，epoch 毫秒）；无 EXIF / 未回填为 null */
   takenAt?: number | null
+  /** 拍摄参数（相机/光圈/快门/ISO/焦距）；随记录同步 */
+  exif?: ExifInfo | null
   /** 所属分类，null 表示未分类 */
   categoryId: string | null
   tags: string[]
@@ -78,6 +80,8 @@ export interface SmartAlbumRules {
   /** 拍摄时间范围（EXIF，epoch 毫秒，闭区间）；设置了任一边界时，无拍摄时间的图不匹配 */
   takenFrom?: number
   takenTo?: number
+  /** 相对日期：最近 N 天内拍摄（匹配时按当前时间计算；与绝对范围 AND 叠加） */
+  takenWithinDays?: number
   /** 关键词：文件名或标签包含（不区分大小写） */
   keyword?: string
   /** 文件大小下/上限（MB） */
@@ -189,9 +193,26 @@ export interface AppSettings {
   bubbleEnabled: boolean
   /** 监视并自动导入的文件夹（新图片落盘即入库，hash 去重幂等） */
   watchFolders: string[]
+  /** 全局快捷键：Alt+Cmd/Ctrl+Right 下一张壁纸（默认关） */
+  globalShortcutEnabled: boolean
 }
 
 // ==================== 二期：MinIO 多设备同步 ====================
+
+/** EXIF 拍摄参数（灯箱信息面板展示；跨设备同步，云端图无文件也能看） */
+export interface ExifInfo {
+  /** 相机厂商 + 型号（如 "Canon EOS R6"） */
+  make?: string
+  model?: string
+  /** 光圈值 f/x */
+  fNumber?: number
+  /** 快门速度（秒，如 0.004 = 1/250） */
+  exposure?: number
+  /** ISO 感光度 */
+  iso?: number
+  /** 焦距（mm） */
+  focal?: number
+}
 
 /** MinIO 连接配置（secretKey 经 safeStorage 加密单独存储，不在此明文） */
 /**
@@ -269,6 +290,8 @@ export interface SyncImageRecord {
   format: ImageFormat
   /** 拍摄时间（EXIF，epoch 毫秒）；null = 未知（同步透传，LWW 随记录走） */
   takenAt?: number | null
+  /** 拍摄参数（随记录同步，云端图无文件也可展示） */
+  exif?: ExifInfo | null
   categoryId: string | null
   tags: string[]
   favorite: boolean

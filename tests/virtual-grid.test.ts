@@ -1,7 +1,7 @@
 /**
  * renderer lib/virtualGrid.ts —— 虚拟滚动行数学（清单 #12）
  * 关键数值手工推导：viewport.w=1280 → cols=5，colW=(1280-32-48)/5=240，
- * rowH=240*3/4+34+1=215，行步进 rowH+GAP=227。
+ * rowH=240*3/4+34=214（ring 为 box-shadow 不占布局），行步进 rowH+GAP=226。
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -33,12 +33,12 @@ describe('columnsForWidth 断点', () => {
 })
 
 describe('行几何', () => {
-  it('colW/rowH 公式（1280 宽 → 5 列，colW=240，rowH=215）', () => {
+  it('colW/rowH 公式（1280 宽 → 5 列，colW=240，rowH=214）', () => {
     const r = win(0, 100)
     expect(r.cols).toBe(5)
     expect(r.colW).toBe(240)
-    expect(r.rowH).toBe((240 * 3) / 4 + CARD_FOOTER + 1)
-    expect(r.rowH).toBe(215)
+    expect(r.rowH).toBe((240 * 3) / 4 + CARD_FOOTER)
+    expect(r.rowH).toBe(214)
   })
 
   it('totalRows 向上取整', () => {
@@ -52,23 +52,23 @@ describe('窗口计算', () => {
   it('顶部：firstRow 钳制为 0，含 overscan 的尾部行', () => {
     const r = win(0, 1000)
     expect(r.firstRow).toBe(0)
-    // ceil((0+800-16)/227)+2 = 4+2 = 6
+    // ceil((0+800-16)/226)+2 = 4+2 = 6
     expect(r.lastRow).toBe(6)
     expect(r.startIndex).toBe(0)
     expect(r.endIndex).toBe(35)
     expect(r.spacerTop).toBe(0)
-    expect(r.spacerBottom).toBe((200 - 6 - 1) * 227)
+    expect(r.spacerBottom).toBe((200 - 6 - 1) * 226)
   })
 
   it('中部滚动：上下各带 overscan，占位高度撑住滚动条', () => {
-    const r = win(2270, 1000) // 恰好滚过 10 行
-    // floor((2270-16)/227)-2 = 9-2 = 7
+    const r = win(2260, 1000) // 恰好滚过 10 行
+    // floor((2260-16)/226)-2 = 9-2 = 7
     expect(r.firstRow).toBe(7)
-    // ceil((2270+800-16)/227)+2 = 14+2 = 16
+    // ceil((2260+800-16)/226)+2 = 14+2 = 16
     expect(r.lastRow).toBe(16)
-    expect(r.spacerTop).toBe(7 * 227)
+    expect(r.spacerTop).toBe(7 * 226)
     expect(r.endIndex).toBe(85)
-    expect(r.spacerBottom).toBe((200 - 16 - 1) * 227)
+    expect(r.spacerBottom).toBe((200 - 16 - 1) * 226)
   })
 
   it('底部钳制：lastRow 不超过 totalRows-1，spacerBottom 为 0', () => {
