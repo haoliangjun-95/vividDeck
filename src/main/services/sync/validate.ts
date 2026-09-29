@@ -133,6 +133,13 @@ function sanitizeRules(raw: unknown): SmartAlbumRules {
     if (ids.length > 0) rules.categoryIds = ids
   }
   if (r.favoriteOnly === true) rules.favoriteOnly = true
+  // 拍摄日期范围（EXIF）：有限正数透传，非法丢弃
+  if (typeof r.takenFrom === 'number' && Number.isFinite(r.takenFrom) && r.takenFrom > 0) {
+    rules.takenFrom = Math.round(r.takenFrom)
+  }
+  if (typeof r.takenTo === 'number' && Number.isFinite(r.takenTo) && r.takenTo > 0) {
+    rules.takenTo = Math.round(r.takenTo)
+  }
   return rules
 }
 

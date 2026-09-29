@@ -18,6 +18,21 @@ const ASPECT_PRESETS = [
   { label: '超宽 ≥2.2', min: 2.2, max: undefined }
 ]
 
+/** epoch 毫秒 → date input 的 YYYY-MM-DD（本地时区） */
+function epochToDateString(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** YYYY-MM-DD → epoch 毫秒；endOfDays=true 取当日 23:59:59.999（闭区间上界） */
+function dateStringToEpoch(s: string, endOfDay = false): number {
+  const [y, m, d] = s.split('-').map(Number)
+  return endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59, 999).getTime()
+    : new Date(y, m - 1, d).getTime()
+}
+
 export function AlbumEditorModal({
   editing,
   initialRules,
@@ -233,6 +248,40 @@ export function AlbumEditorModal({
               <option value={2560}>2K</option>
               <option value={3840}>4K</option>
             </select>
+          </label>
+        </div>
+
+        {/* 拍摄日期范围（EXIF；设置了任一边界时，无拍摄时间的图不匹配） */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-neutral-500 dark:text-neutral-300">拍摄日期</span>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="date"
+              className="field !py-1"
+              value={rules.takenFrom ? epochToDateString(rules.takenFrom) : ''}
+              onChange={(e) =>
+                patch({ takenFrom: e.target.value ? dateStringToEpoch(e.target.value) : undefined })
+              }
+            />
+            ~
+            <input
+              type="date"
+              className="field !py-1"
+              value={rules.takenTo ? epochToDateString(rules.takenTo) : ''}
+              onChange={(e) =>
+                patch({
+                  takenTo: e.target.value ? dateStringToEpoch(e.target.value, true) : undefined
+                })
+              }
+            />
+            {(rules.takenFrom !== undefined || rules.takenTo !== undefined) && (
+              <button
+                className="rounded-full border border-neutral-300 px-2 py-0.5 text-[11px] hover:border-red-400 hover:text-red-500 dark:border-neutral-600"
+                onClick={() => patch({ takenFrom: undefined, takenTo: undefined })}
+              >
+                清除
+              </button>
+            )}
           </label>
         </div>
 

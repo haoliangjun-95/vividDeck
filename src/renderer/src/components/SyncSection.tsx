@@ -515,11 +515,17 @@ export function SyncSection(): JSX.Element | null {
 /** 同步体检：三方对账结果 + 修复动作 + 完整性校验 + 下载容量预估 */
 function HealthCheckSection(): JSX.Element | null {
   const toast = useUIStore((st) => st.toast)
-  const closeDrawer = useUIStore((st) => st.closeDrawer)
   const setFilter = useLibraryStore((st) => st.setFilter)
+  const closeDrawer = useUIStore((st) => st.closeDrawer)
   const [report, setReport] = useState<SyncHealthReport | null>(null)
   const [checking, setChecking] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [findingSimilar, setFindingSimilar] = useState(false)
+  const [similarResult, setSimilarResult] = useState<{
+    groups: { ids: string[]; fileNames: string[] }[]
+    scanned: number
+    computed: number
+  } | null>(null)
   const [estimate, setEstimate] = useState<{ count: number; sizeBytes: number } | null>(null)
 
   /** 深链：画廊过滤到该问题影响的图片，并关闭设置抽屉便于查看 */
@@ -713,6 +719,64 @@ function HealthCheckSection(): JSX.Element | null {
       >
         {verifying ? '校验中…' : '校验本地文件完整性（内容哈希比对）'}
       </button>
+
+      {/* 近重复检测（dHash）：同场景连拍 / 重复截图 / 编辑版本，分组查看后人工清理 */}
+      <button
+        className="btn-ghost w-full justify-center !py-1 text-[11px]"
+        disabled={findingSimilar}
+        onClick={() => {
+          setSimilarResult(null)
+          setFindingSimilar(true)
+          void window.api
+            .syncFindSimilar()
+            .then((r) => {
+              setFindingSimilar(false)
+              setSimilarResult(r)
+              toast(
+                r.groups.length > 0
+                  ? `发现 ${r.groups.length} 组疑似重复（共 ${r.groups.reduce((n, g) => n + g.ids.length, 0)} 张）`
+                  : '未发现相似图片',
+                r.groups.length > 0 ? 'info' : 'success'
+              )
+            })
+            .catch((err: unknown) => {
+              setFindingSimilar(false)
+              toast(`检测失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+            })
+        }}
+      >
+        {findingSimilar ? '计算感知哈希中…' : '查找相似图片（连拍 / 重复截图）'}
+      </button>
+      {similarResult && similarResult.groups.length > 0 && (
+        <div className="space-y-1.5">
+          {similarResult.groups.map((g, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between gap-2 rounded-md bg-neutral-50 px-2 py-1.5 text-[11px] dark:bg-neutral-800/60"
+            >
+              <span
+                className="min-w-0 flex-1 truncate text-neutral-500 dark:text-neutral-300"
+                title={g.fileNames.join('、')}
+              >
+                {g.ids.length} 张：{g.fileNames.slice(0, 3).join('、')}
+                {g.fileNames.length > 3 ? ` 等 ${g.fileNames.length} 张` : ''}
+              </span>
+              <button
+                className="shrink-0 text-indigo-500 hover:underline"
+                onClick={() => {
+                  setFilter({ health: { label: `疑似重复（${g.ids.length} 张）`, ids: g.ids } })
+                  closeDrawer()
+                }}
+              >
+                查看
+              </button>
+            </div>
+          ))}
+          <p className="text-[10px] text-neutral-400">
+            相似为感知哈希判定（可能有误报），请在画廊中确认后再删除。
+          </p>
+        </div>
+      )}
     </div>
   )
 }

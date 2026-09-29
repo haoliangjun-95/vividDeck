@@ -60,6 +60,23 @@ export function SettingsPanel(): JSX.Element {
       // 悬浮球开关由主进程处理后回读最新设置（含托盘菜单联动）
       void window.api.getState().then((s) => setSettings(s.settings))
     }
+    if (patch.watchFolders !== undefined) {
+      setSettings(await window.api.setWatchFolders(patch.watchFolders))
+    }
+  }
+
+  /** 添加监视文件夹（复用导入目录选择对话框）；重复目录自动去重 */
+  const addWatchFolder = async (): Promise<void> => {
+    try {
+      const picked = await window.api.pickImport('folder')
+      if (picked.length === 0) return
+      const next = Array.from(new Set([...(settings.watchFolders ?? []), ...picked]))
+      if (next.length === (settings.watchFolders ?? []).length) return
+      await update({ watchFolders: next })
+      toast(`已开始监视 ${picked.length} 个文件夹`)
+    } catch (err) {
+      toast(`添加失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
   }
 
   /** 缓存清理（#8）：孤儿缩略图/预览 + 预渲染缓存（可再生），完成后 toast 结果并刷新占用 */
@@ -314,6 +331,43 @@ export function SettingsPanel(): JSX.Element {
             </p>
           </>
         )}
+      </section>
+
+      {/* 文件夹监视自动导入 */}
+      <section className="space-y-2">
+        <div className="font-medium">自动导入</div>
+        <p className="text-xs leading-relaxed text-neutral-400">
+          监视以下文件夹，新图片落盘后自动入库（内容去重，重复文件自动跳过；存储目录本身不可选，防止自我循环）。
+        </p>
+        {(settings.watchFolders ?? []).map((dir) => (
+          <div
+            key={dir}
+            className="flex items-center justify-between gap-2 rounded-lg border border-neutral-300 px-3 py-2 text-xs dark:border-neutral-700"
+          >
+            <span
+              className="min-w-0 flex-1 truncate text-neutral-600 dark:text-neutral-300"
+              title={dir}
+            >
+              {dir}
+            </span>
+            <button
+              className="shrink-0 text-neutral-400 hover:text-red-500"
+              title="停止监视"
+              onClick={() =>
+                void update({ watchFolders: settings.watchFolders.filter((d) => d !== dir) })
+              }
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          className="btn-ghost w-full justify-center border border-dashed border-neutral-300 text-xs dark:border-neutral-700"
+          onClick={() => void addWatchFolder()}
+        >
+          <FolderOpen size={13} />
+          添加监视文件夹
+        </button>
       </section>
 
       {/* 桌面悬浮球 */}

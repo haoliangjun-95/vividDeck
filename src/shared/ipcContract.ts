@@ -221,6 +221,20 @@ export interface IpcContract extends Record<IpcChannelName, IpcChannelDef> {
   [IPC.SYNC_HEALTH_CHECK]: IpcChannelDef<'envelope', [], SyncHealthReport>
   [IPC.SYNC_HEALTH_CLEAN_ORPHANS]: IpcChannelDef<'envelope', [payload: { keys: string[] }], number>
   [IPC.SYNC_HEALTH_REPAIR_BROKEN]: IpcChannelDef<'envelope', [payload: { ids: string[] }], number>
+  [IPC.APP_SET_WATCH_FOLDERS]: IpcChannelDef<
+    'envelope',
+    [payload: { folders: string[] }],
+    AppSettings
+  >
+  [IPC.SYNC_FIND_SIMILAR]: IpcChannelDef<
+    'envelope',
+    [],
+    {
+      groups: { ids: string[]; fileNames: string[] }[]
+      scanned: number
+      computed: number
+    }
+  >
   [IPC.SYNC_VERIFY_INTEGRITY]: IpcChannelDef<'envelope', [], { id: string; fileName: string }[]>
   [IPC.SYNC_DOWNLOAD_ESTIMATE]: IpcChannelDef<'envelope', [], { count: number; sizeBytes: number }>
 

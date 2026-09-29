@@ -29,7 +29,8 @@ export const IPC = {
   LIBRARY_RENAME_TAG: 'library:renameTag', // { from, to } -> { renamed }（全库 + 相册规则改写）
   LIBRARY_MERGE_TAGS: 'library:mergeTags', // { sources, into } -> { merged }
   LIBRARY_DELETE_TAG: 'library:deleteTag', // { tag } -> { removed }
-  LIBRARY_BACKFILL_TAKEN_AT: 'library:backfillTakenAt', // {} -> { scanned, updated }（为本地图回填 EXIF 拍摄时间）
+  LIBRARY_BACKFILL_TAKEN_AT: 'library:backfillTakenAt',
+  APP_SET_WATCH_FOLDERS: 'app:setWatchFolders', // { folders } -> AppSettings（重建监视器） // {} -> { scanned, updated }（为本地图回填 EXIF 拍摄时间）
   LIBRARY_ADD_CATEGORY: 'library:addCategory', // { name } -> LibraryData
   LIBRARY_RENAME_CATEGORY: 'library:renameCategory', // { id, name } -> LibraryData
   LIBRARY_DELETE_CATEGORY: 'library:deleteCategory', // { id } -> LibraryData
@@ -60,7 +61,8 @@ export const IPC = {
   SYNC_HEALTH_CHECK: 'sync:healthCheck', // -> SyncHealthReport
   SYNC_HEALTH_CLEAN_ORPHANS: 'sync:cleanOrphans', // { keys } -> { cleaned }
   SYNC_HEALTH_REPAIR_BROKEN: 'sync:repairBroken', // { ids } -> { fixed }
-  SYNC_VERIFY_INTEGRITY: 'sync:verifyIntegrity', // -> { id, fileName }[]（进度走 SYNC_PROGRESS）
+  SYNC_VERIFY_INTEGRITY: 'sync:verifyIntegrity',
+  SYNC_FIND_SIMILAR: 'sync:findSimilar', // {} -> { groups, scanned, computed }（dHash 近重复检测） // -> { id, fileName }[]（进度走 SYNC_PROGRESS）
   SYNC_DOWNLOAD_ESTIMATE: 'sync:downloadEstimate', // -> { count, sizeBytes }
 
   // ---------- 悬浮球 ----------

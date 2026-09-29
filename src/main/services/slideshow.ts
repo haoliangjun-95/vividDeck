@@ -19,6 +19,7 @@ import { applyWallpaper, listMonitors } from './wallpaper'
 import { recordApply } from './history'
 import { ensureLocal } from './sync/engine'
 import { matchAlbum } from '@shared/album'
+import { resolveTimeScope } from '@shared/timeScope'
 
 const DEFAULT_CONFIG: SlideshowConfig = {
   enabled: false,
@@ -86,6 +87,12 @@ function intervalMs(config: SlideshowConfig): number {
     case 'day':
       return v * 86_400_000
   }
+}
+
+/** 共享模式应用时段范围（独立模式经 effectiveConfig 已应用） */
+function withTimeScope(config: SlideshowConfig): SlideshowConfig {
+  const scope = resolveTimeScope(config.timeScopes, new Date(), undefined)
+  return scope ? { ...config, scope } : config
 }
 
 /** 依据范围计算素材池（图片 ID，按加入时间排序保证顺序模式稳定） */
@@ -174,7 +181,8 @@ function effectiveConfig(
   const o = config.monitorOverrides?.[monitorId] ?? {}
   return {
     ...config,
-    scope: o.scope ?? config.scope,
+    // 时段轮播：命中的时段范围替换全局范围；单屏自定义 scope 优先于时段
+    scope: o.scope ?? resolveTimeScope(config.timeScopes, new Date(), undefined) ?? config.scope,
     intervalValue: o.intervalValue ?? config.intervalValue,
     intervalUnit: o.intervalUnit ?? config.intervalUnit,
     fillMode: o.fillMode ?? config.fillMode,
@@ -355,7 +363,7 @@ async function tick(manual = false): Promise<void> {
     const config = getSlideshowConfig()
     // 读取最新持久化配置：关闭总开关后已排定的定时器不得再多切一次（手动触发除外）
     if (!config.enabled && !manual) return
-    const pool = computePool(config)
+    const pool = computePool(withTimeScope(config))
     if (pool.length === 0) return
 
     // 解析目标显示器：配置为空 = 全部在线显示器（独立模式需要具体清单逐屏取图）

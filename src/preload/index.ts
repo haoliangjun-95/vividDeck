@@ -97,6 +97,7 @@ const api = {
   mergeTags: (sources: string[], into: string) => call(IPC.LIBRARY_MERGE_TAGS, { sources, into }),
   deleteTag: (tag: string) => call(IPC.LIBRARY_DELETE_TAG, { tag }),
   backfillTakenAt: () => call(IPC.LIBRARY_BACKFILL_TAKEN_AT),
+  setWatchFolders: (folders: string[]) => call(IPC.APP_SET_WATCH_FOLDERS, { folders }),
   addCategory: (name: string) => call(IPC.LIBRARY_ADD_CATEGORY, { name }),
   renameCategory: (id: string, name: string) => call(IPC.LIBRARY_RENAME_CATEGORY, { id, name }),
   deleteCategory: (id: string) => call(IPC.LIBRARY_DELETE_CATEGORY, { id }),
@@ -143,6 +144,7 @@ const api = {
   syncCleanOrphans: (keys: string[]) => call(IPC.SYNC_HEALTH_CLEAN_ORPHANS, { keys }),
   syncRepairBroken: (ids: string[]) => call(IPC.SYNC_HEALTH_REPAIR_BROKEN, { ids }),
   syncVerifyIntegrity: () => call(IPC.SYNC_VERIFY_INTEGRITY),
+  syncFindSimilar: () => call(IPC.SYNC_FIND_SIMILAR),
   syncDownloadEstimate: () => call(IPC.SYNC_DOWNLOAD_ESTIMATE),
 
   // ---------- 悬浮球 ----------

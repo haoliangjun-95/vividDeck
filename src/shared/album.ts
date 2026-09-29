@@ -10,6 +10,8 @@ interface MatchableImage {
   categoryId: string | null
   tags: string[]
   favorite: boolean
+  /** 拍摄时间（EXIF，epoch 毫秒）；未知为 null/undefined */
+  takenAt?: number | null
 }
 
 export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
@@ -26,6 +28,12 @@ export function matchAlbum(img: MatchableImage, album: SmartAlbum): boolean {
   )
     return false
   if (r.minWidth && img.width < r.minWidth) return false
+  // 拍摄日期范围（闭区间）：设置了任一边界时，无拍摄时间的图不匹配
+  if (r.takenFrom !== undefined || r.takenTo !== undefined) {
+    if (img.takenAt === null || img.takenAt === undefined) return false
+    if (r.takenFrom !== undefined && img.takenAt < r.takenFrom) return false
+    if (r.takenTo !== undefined && img.takenAt > r.takenTo) return false
+  }
   if (r.orientation) {
     const landscape = img.width >= img.height
     if (r.orientation === 'landscape' && !landscape) return false

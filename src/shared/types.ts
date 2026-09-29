@@ -75,6 +75,9 @@ export interface SmartAlbumRules {
   /** 属于任一分类 */
   categoryIds?: string[]
   favoriteOnly?: boolean
+  /** 拍摄时间范围（EXIF，epoch 毫秒，闭区间）；设置了任一边界时，无拍摄时间的图不匹配 */
+  takenFrom?: number
+  takenTo?: number
 }
 
 export interface SmartAlbum {
@@ -113,6 +116,13 @@ export interface SlideshowScope {
   albumId?: string
 }
 
+/** 时段范围：from/to 为 "HH:mm"（本地时区）；from > to 表示跨午夜（如 22:00~06:00） */
+export interface TimeScope {
+  from: string
+  to: string
+  scope: SlideshowScope
+}
+
 /** 单显示器轮播覆盖（缺省项继承全局配置） */
 export interface MonitorOverride {
   scope?: SlideshowScope
@@ -129,6 +139,8 @@ export interface SlideshowConfig {
   intervalValue: number
   intervalUnit: IntervalUnit
   scope: SlideshowScope
+  /** 时段范围（可选）：命中的时段用其范围替换全局范围；单屏自定义范围优先于时段 */
+  timeScopes?: TimeScope[]
   order: SlideshowOrder
   /** 轮播使用的填充模式 */
   fillMode: FillMode
@@ -170,6 +182,8 @@ export interface AppSettings {
   storageDir: string
   /** 桌面悬浮球（点击切换壁纸） */
   bubbleEnabled: boolean
+  /** 监视并自动导入的文件夹（新图片落盘即入库，hash 去重幂等） */
+  watchFolders: string[]
 }
 
 // ==================== 二期：MinIO 多设备同步 ====================

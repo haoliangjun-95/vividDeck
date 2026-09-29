@@ -107,6 +107,33 @@ describe('matchAlbum 尺寸与方向', () => {
   })
 })
 
+describe('matchAlbum 拍摄日期范围', () => {
+  const DAY = 24 * 3600 * 1000
+  const FROM = new Date(2024, 0, 1).getTime()
+  const TO = new Date(2024, 11, 31, 23, 59, 59, 999).getTime()
+
+  it('闭区间边界：from/to 本身都命中', () => {
+    const a = album({ takenFrom: FROM, takenTo: TO })
+    expect(matchAlbum(img({ takenAt: FROM }), a)).toBe(true)
+    expect(matchAlbum(img({ takenAt: TO }), a)).toBe(true)
+    expect(matchAlbum(img({ takenAt: FROM - 1 }), a)).toBe(false)
+    expect(matchAlbum(img({ takenAt: TO + 1 }), a)).toBe(false)
+  })
+
+  it('只设单边：另一侧不约束', () => {
+    expect(matchAlbum(img({ takenAt: FROM - DAY }), album({ takenFrom: FROM }))).toBe(false)
+    expect(matchAlbum(img({ takenAt: FROM }), album({ takenFrom: FROM }))).toBe(true)
+    expect(matchAlbum(img({ takenAt: 0 }), album({ takenFrom: FROM }))).toBe(false)
+    expect(matchAlbum(img({ takenAt: TO + DAY }), album({ takenTo: TO }))).toBe(false)
+  })
+
+  it('设置了任一边界时，无拍摄时间（null/undefined）不匹配；未设置则正常匹配', () => {
+    expect(matchAlbum(img({ takenAt: null }), album({ takenFrom: FROM }))).toBe(false)
+    expect(matchAlbum(img({}), album({ takenTo: TO }))).toBe(false)
+    expect(matchAlbum(img({ takenAt: null }), album({}))).toBe(true)
+  })
+})
+
 describe('matchAlbums', () => {
   it('返回全部命中的相册 id', () => {
     const albums = [

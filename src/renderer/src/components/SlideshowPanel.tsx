@@ -1,7 +1,7 @@
 /**
  * 轮播计划面板：开关、周期（分钟/小时/天）、素材范围、顺序、目标显示器
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useUIStore } from '../store/ui'
 import { useLibraryStore } from '../store/library'
@@ -11,7 +11,8 @@ import type {
   MonitorOverride,
   SlideshowConfig,
   SlideshowOrder,
-  SlideshowScope
+  SlideshowScope,
+  TimeScope
 } from '@shared/types'
 import { matchAlbum } from '@shared/album'
 
@@ -34,6 +35,49 @@ export function SlideshowPanel(): JSX.Element {
     const off = window.api.onSlideshowChanged(setConfig)
     return off
   }, [])
+
+  // ---- 时段范围：本地草稿 + 防抖提交（时间输入逐键变化，避免 IPC 往返回跳） ----
+  const [timeScopes, setTimeScopes] = useState<TimeScope[]>([])
+  const timeDraftInited = useRef(false)
+  useEffect(() => {
+    if (config && !timeDraftInited.current) {
+      timeDraftInited.current = true
+      setTimeScopes(config.timeScopes ?? [])
+    }
+  }, [config])
+  useEffect(() => {
+    if (!timeDraftInited.current || !config) return
+    if (JSON.stringify(timeScopes) === JSON.stringify(config.timeScopes ?? [])) return
+    const t = setTimeout(() => {
+      void patch({ timeScopes: timeScopes.length > 0 ? timeScopes : undefined })
+    }, 400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 草稿与 config 的对比已在体内处理
+  }, [timeScopes])
+
+  const updateTimeRow = (i: number, p: Partial<TimeScope>): void =>
+    setTimeScopes((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...p } : r)))
+
+  const scopeOptions = [
+    { value: 'all', label: '全部图库' },
+    { value: 'favorite', label: '收藏图片' },
+    ...categories.map((c) => ({ value: `category:${c.id}`, label: `分类：${c.name}` })),
+    ...albums.map((a) => ({ value: `album:${a.id}`, label: `智能相册：${a.name}` }))
+  ]
+  const scopeValue = (sc: SlideshowScope): string =>
+    sc.type === 'all'
+      ? 'all'
+      : sc.type === 'favorite'
+        ? 'favorite'
+        : `${sc.type}:${sc.categoryId ?? sc.albumId ?? ''}`
+  const scopeFromValue = (v: string): SlideshowScope =>
+    v === 'all'
+      ? { type: 'all' }
+      : v === 'favorite'
+        ? { type: 'favorite' }
+        : v.startsWith('album:')
+          ? { type: 'album', albumId: v.slice(6) }
+          : { type: 'category', categoryId: v.slice(9) }
 
   if (!config) return <div className="text-sm text-neutral-400">加载中…</div>
 
@@ -136,8 +180,11 @@ export function SlideshowPanel(): JSX.Element {
                 ? config.scope.type === 'all'
                 : opt.key === 'favorite'
                   ? config.scope.type === 'favorite'
-                  : config.scope.type === 'category' &&
-                    config.scope.categoryId === opt.key.split(':')[1]
+                  : opt.key.startsWith('album:')
+                    ? config.scope.type === 'album' &&
+                      config.scope.albumId === opt.key.split(':')[1]
+                    : config.scope.type === 'category' &&
+                      config.scope.categoryId === opt.key.split(':')[1]
             return (
               <button
                 key={opt.key}
@@ -169,6 +216,61 @@ export function SlideshowPanel(): JSX.Element {
             当前范围内没有图片，轮播将不会切换。
           </p>
         )}
+      </section>
+
+      {/* 时段范围：命中的时段替换全局范围（单屏自定义范围优先于时段） */}
+      <section className="space-y-2">
+        <div className="font-medium">时段范围（可选）</div>
+        <p className="text-xs leading-relaxed text-neutral-400">
+          命中时段时用该行的范围替换上方全局范围（如工作时间工作壁纸、夜间照片墙）；单屏自定义范围不受影响。跨午夜把开始填得晚于结束即可（如
+          22:00~06:00）。
+        </p>
+        {timeScopes.map((ts, i) => (
+          <div
+            key={i}
+            className="flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-2 text-xs dark:border-neutral-700"
+          >
+            <input
+              type="time"
+              className="field !w-24 !py-1"
+              value={ts.from}
+              onChange={(e) => updateTimeRow(i, { from: e.target.value })}
+            />
+            <span className="text-neutral-400">~</span>
+            <input
+              type="time"
+              className="field !w-24 !py-1"
+              value={ts.to}
+              onChange={(e) => updateTimeRow(i, { to: e.target.value })}
+            />
+            <select
+              className="field !w-40 !py-1"
+              value={scopeValue(ts.scope)}
+              onChange={(e) => updateTimeRow(i, { scope: scopeFromValue(e.target.value) })}
+            >
+              {scopeOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button
+              className="ml-auto rounded-full p-1 text-neutral-400 hover:text-red-500"
+              title="删除该时段"
+              onClick={() => setTimeScopes(timeScopes.filter((_, idx) => idx !== i))}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          className="btn-ghost w-full justify-center border border-dashed border-neutral-300 text-xs dark:border-neutral-700"
+          onClick={() =>
+            setTimeScopes([...timeScopes, { from: '09:00', to: '18:00', scope: { type: 'all' } }])
+          }
+        >
+          + 添加时段
+        </button>
       </section>
 
       {/* 顺序 */}

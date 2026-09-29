@@ -21,6 +21,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { registerIpcHandlers } from './ipc'
 import { initSlideshow, nextSlideshowNow, flushSlideshow } from './services/slideshow'
+import { initWatchers } from './services/watcher'
 import { getSettings } from './services/settings'
 import { customStorageDirMissing } from './services/paths'
 import { flushLibrary, snapshotLibraryIfDue } from './services/library'
@@ -246,6 +247,8 @@ app.whenReady().then(() => {
   createTray()
   initSlideshow()
   initSyncEngine()
+  // 文件夹监视自动导入（设置页配置的目录）
+  initWatchers(getSettings().watchFolders)
   // 素材库周快照（每周一份，保留 4 份；失败不影响启动）
   const backedUp = snapshotLibraryIfDue()
   if (backedUp) console.log(`[library] 已生成周期快照: ${backedUp}`)

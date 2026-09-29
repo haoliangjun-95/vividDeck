@@ -45,6 +45,7 @@ import { applyWallpaper, listMonitors } from './services/wallpaper'
 import { getSlideshowConfig, nextSlideshowNow, setSlideshowConfig } from './services/slideshow'
 import { clearHistory, listHistory, recordApply } from './services/history'
 import { flushSettings, getSettings, updateSettings } from './services/settings'
+import { initWatchers } from './services/watcher'
 import {
   customStorageDirMissing,
   dirSize,
@@ -77,6 +78,7 @@ import {
   runHealthCheck,
   verifyIntegrity
 } from './services/sync/health'
+import { findSimilar } from './services/similar'
 import { currentWallpaperImageId, setBubbleEnabled } from './bubble'
 import { checkpointLibrary, flushLibrary } from './services/library'
 import { flushHistory } from './services/history'
@@ -123,6 +125,14 @@ export function registerIpcHandlers(): void {
   })
 
   handle(IPC.APP_SET_IMPORT_MODE, (mode) => updateSettings({ importMode: mode }))
+  handle(IPC.APP_SET_WATCH_FOLDERS, (payload) => {
+    const folders = (Array.isArray(payload.folders) ? payload.folders : []).filter(
+      (f): f is string => typeof f === 'string' && f.length > 0
+    )
+    const after = updateSettings({ watchFolders: folders })
+    initWatchers(after.watchFolders)
+    return after
+  })
 
   handle(IPC.APP_SET_DEFAULT_FILL, (mode) => updateSettings({ defaultFillMode: mode }))
 
@@ -322,6 +332,20 @@ export function registerIpcHandlers(): void {
     })
   )
   handle(IPC.SYNC_DOWNLOAD_ESTIMATE, () => estimateDownload())
+
+  // 近重复检测（dHash）：进度复用 SYNC_PROGRESS 通道（finalizing 阶段文案区分）
+  handle(IPC.SYNC_FIND_SIMILAR, () =>
+    findSimilar((current, total) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send(IPC_EVENTS.SYNC_PROGRESS, {
+          phase: 'finalizing',
+          current,
+          total,
+          message: '计算感知哈希查找相似图片…'
+        })
+      }
+    })
+  )
 
   // ---------- 轮播 ----------
   handleRaw(IPC.SLIDESHOW_GET, () => getSlideshowConfig())
